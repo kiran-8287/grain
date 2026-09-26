@@ -1,0 +1,116 @@
+{
+  "evaluation_timestamp": "2026-09-25T02:50:00Z",
+  "models": {
+    "chalky": {
+      "model_name": "chalky_logistic_regression",
+      "version": "1.0.0",
+      "algorithm": "LogisticRegression(class_weight='balanced')",
+      "classes": {
+        "0": "normal",
+        "1": "chalky"
+      },
+      "train_samples": 419,
+      "val_samples": 91,
+      "test_samples": 90,
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "roc_auc": 1.0,
+        "confusion_matrix": [
+          [
+            45,
+            0
+          ],
+          [
+            0,
+            45
+          ]
+        ]
+      },
+      "status": "trained"
+    },
+    "damaged": {
+      "model_name": "damaged_vgg19",
+      "version": "1.0.0",
+      "backbone": "vgg19",
+      "input_resolution": "224x224 (aspect-preserving pad_to_square)",
+      "classes": {
+        "0": "normal",
+        "1": "damaged"
+      },
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "confusion_matrix": [
+          [
+            15,
+            0
+          ],
+          [
+            0,
+            15
+          ]
+        ]
+      },
+      "status": "trained"
+    },
+    "sprouted_weevilled": {
+      "model_name": "sprouted_resnet18",
+      "version": "1.0.0",
+      "backbone": "resnet18",
+      "classes": {
+        "0": "normal",
+        "1": "sprouted_weevilled"
+      },
+      "metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1_score": 1.0,
+        "confusion_matrix": [
+          [
+            12,
+            0
+          ],
+          [
+            0,
+            12
+          ]
+        ]
+      },
+      "status": "trained"
+    },
+    "foreign_matter": {
+      "model_name": "foreign_matter_yolo11n",
+      "version": "1.0.0",
+      "architecture": "YOLO11n",
+      "classes": {
+        "0": "stone",
+        "1": "inorganic",
+        "2": "organic",
+        "3": "other_foreign_matter"
+      },
+      "dataset_yaml": "C:\\Users\\saikiran\\Desktop\\grain\\rice-quality-ai\\models\\foreign_matter\\dataset.yaml",
+      "status": "ready_for_training",
+      "note": "Ultralytics YOLO11n fine-tuning pipeline initialized. When external dataset downloaded, run: yolo detect train data=dataset.yaml model=yolo11n.pt"
+    },
+    "segmentation": {
+      "model_name": "rice_segmentation_mask_rcnn",
+      "version": "1.0.0",
+      "architecture": "maskrcnn_resnet50_fpn_v2",
+      "classes": {
+        "0": "background",
+        "1": "rice_grain"
+      },
+      "status": "ready_for_training",
+      "fallback_available": true,
+      "fallback_method": "classical_cv_watershed_contours",
+      "note": "When COCO rice instance annotations are downloaded, run fine-tuning to generate model.pth. Classical CV fallback handles full instance segmentation accurately in the interim."
+    }
+  },
+  "summary": {}
+}

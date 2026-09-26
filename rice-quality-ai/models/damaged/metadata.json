@@ -1,0 +1,27 @@
+{
+  "model_name": "damaged_vgg19",
+  "version": "1.0.0",
+  "backbone": "vgg19",
+  "input_resolution": "224x224 (aspect-preserving pad_to_square)",
+  "classes": {
+    "0": "normal",
+    "1": "damaged"
+  },
+  "metrics": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "confusion_matrix": [
+      [
+        15,
+        0
+      ],
+      [
+        0,
+        15
+      ]
+    ]
+  },
+  "status": "trained"
+}

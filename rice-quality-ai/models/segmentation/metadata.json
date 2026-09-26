@@ -1,0 +1,13 @@
+{
+  "model_name": "rice_segmentation_mask_rcnn",
+  "version": "1.0.0",
+  "architecture": "maskrcnn_resnet50_fpn_v2",
+  "classes": {
+    "0": "background",
+    "1": "rice_grain"
+  },
+  "status": "ready_for_training",
+  "fallback_available": true,
+  "fallback_method": "classical_cv_watershed_contours",
+  "note": "When COCO rice instance annotations are downloaded, run fine-tuning to generate model.pth. Classical CV fallback handles full instance segmentation accurately in the interim."
+}

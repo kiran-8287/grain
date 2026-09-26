@@ -1,0 +1,14 @@
+{
+  "model_name": "foreign_matter_yolo11n",
+  "version": "1.0.0",
+  "architecture": "YOLO11n",
+  "classes": {
+    "0": "stone",
+    "1": "inorganic",
+    "2": "organic",
+    "3": "other_foreign_matter"
+  },
+  "dataset_yaml": "C:\\Users\\saikiran\\Desktop\\grain\\rice-quality-ai\\models\\foreign_matter\\dataset.yaml",
+  "status": "ready_for_training",
+  "note": "Ultralytics YOLO11n fine-tuning pipeline initialized. When external dataset downloaded, run: yolo detect train data=dataset.yaml model=yolo11n.pt"
+}

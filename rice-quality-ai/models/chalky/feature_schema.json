@@ -1,0 +1,16 @@
+{
+  "features": [
+    "mean_l_star",
+    "std_l_star",
+    "mean_a_star",
+    "mean_b_star",
+    "bright_pixel_fraction",
+    "chalky_pixel_fraction",
+    "glcm_contrast",
+    "glcm_homogeneity",
+    "glcm_energy",
+    "glcm_correlation"
+  ],
+  "n_features": 10,
+  "scaling": "StandardScaler"
+}

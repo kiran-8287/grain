@@ -1,0 +1,94 @@
+{
+  "_description": "All configurable thresholds with provenance. SOURCE types: official, literature, engineering_heuristic, learned_from_dataset",
+  
+  "broken": {
+    "whole_kernel_fraction": 0.75,
+    "robust_filter_fraction": 0.85,
+    "robust_iterations": 3,
+    "small_broken_max_fraction": 0.25,
+    "_source": "official — kernel below three-fourths of whole-kernel length",
+    "_notes": "Small broken pieces (< 1/4 of whole kernel length) tracked separately per standard"
+  },
+
+  "chalky": {
+    "bright_pixel_l_threshold": 85,
+    "bright_pixel_fraction_threshold": 0.3,
+    "glcm_distances": [1, 3],
+    "glcm_angles": [0, 0.7854, 1.5708, 2.3562],
+    "probability_threshold": 0.5,
+    "_source": "literature — LAB brightness + GLCM texture features"
+  },
+
+  "red": {
+    "a_star_mean_threshold": 10.0,
+    "hue_red_low": [0, 50, 50],
+    "hue_red_high": [10, 255, 255],
+    "hue_red_low2": [170, 50, 50],
+    "hue_red_high2": [180, 255, 255],
+    "red_area_fraction_threshold": 0.15,
+    "_source": "engineering_heuristic — colour-based proxy for red cuticle coverage"
+  },
+
+  "discoloured": {
+    "delta_e_threshold": 15.0,
+    "discoloured_area_fraction_threshold": 0.2,
+    "_source": "engineering_heuristic — LAB colour distance (DeltaE)"
+  },
+
+  "dehusked": {
+    "bran_coverage_threshold": 0.25,
+    "brown_hue_low": [10, 40, 40],
+    "brown_hue_high": [30, 255, 200],
+    "_source": "official concept — more than one-quarter surface covered with bran; method is visual proxy only"
+  },
+
+  "immature_shrunken": {
+    "breadth_ratio_threshold": 0.7,
+    "area_ratio_threshold": 0.5,
+    "solidity_threshold": 0.85,
+    "_source": "engineering_heuristic — geometry + texture proxy"
+  },
+
+  "segmentation": {
+    "confidence_threshold": 0.5,
+    "nms_threshold": 0.3,
+    "min_grain_area_pixels": 50,
+    "merge_detection_area_ratio": 2.5,
+    "merge_detection_aspect_ratio": 4.0,
+    "_source": "engineering_heuristic"
+  },
+
+  "foreign_matter": {
+    "confidence_threshold": 0.4,
+    "nms_threshold": 0.45,
+    "_source": "engineering_heuristic"
+  },
+
+  "admixture": {
+    "mahalanobis_threshold": 3.0,
+    "min_grains_for_analysis": 10,
+    "_source": "engineering_heuristic — statistical outlier detection"
+  },
+
+  "image_quality": {
+    "blur_threshold_good": 100,
+    "blur_threshold_fair": 50,
+    "blur_threshold_poor": 20,
+    "min_grain_pixels_good": 400,
+    "min_grain_pixels_fair": 100,
+    "min_grain_pixels_poor": 25,
+    "uncertain_grain_fraction_warning": 0.2,
+    "_source": "engineering_heuristic"
+  },
+
+  "sample_warning": {
+    "small_sample_threshold": 30,
+    "_source": "engineering_heuristic — configurable statistical warning, not an official government threshold"
+  },
+
+  "calibration": {
+    "aruco_dictionary": "DICT_4X4_50",
+    "marker_size_mm": 20.0,
+    "_source": "engineering_heuristic"
+  }
+}

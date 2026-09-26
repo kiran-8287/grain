@@ -1,0 +1,26 @@
+{
+  "model_name": "sprouted_resnet18",
+  "version": "1.0.0",
+  "backbone": "resnet18",
+  "classes": {
+    "0": "normal",
+    "1": "sprouted_weevilled"
+  },
+  "metrics": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "confusion_matrix": [
+      [
+        12,
+        0
+      ],
+      [
+        0,
+        12
+      ]
+    ]
+  },
+  "status": "trained"
+}

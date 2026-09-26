@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/build/
+.next/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Model weights (large files)
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+models/**/*.bin
+models/**/*.h5
+models/**/*.pkl
+models/**/*.joblib
+!models/**/.gitkeep
+
+# Training data (large files)
+data/raw/
+data/processed/
+data/downloads/
+
+# Temporary files
+uploads/
+tmp/
+*.tmp
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

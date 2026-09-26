@@ -1,0 +1,31 @@
+{
+  "app": {
+    "name": "Rice Grain Quality Analyzer",
+    "version": "1.0.0",
+    "description": "Image-based raw milled rice grain quality analysis system"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "debug": true,
+    "log_level": "INFO"
+  },
+  "upload": {
+    "max_size_mb": 50,
+    "allowed_extensions": [".jpg", ".jpeg", ".png", ".webp", ".tiff", ".tif"],
+    "upload_dir": "uploads"
+  },
+  "processing": {
+    "max_image_pixels": 100000000,
+    "tile_size": 1024,
+    "batch_size": 16,
+    "use_gpu": true,
+    "gpu_device": 0
+  },
+  "cors": {
+    "allowed_origins": [
+      "http://localhost:5173",
+      "http://localhost:3000"
+    ]
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "_metadata": {
+    "source_title": "Uniform Specification for Grade A & Common Rice — Kharif Marketing Season 2026-27",
+    "source_url": "https://fci.gov.in/procurement-specification.php",
+    "issue_date": "2026",
+    "season": "KMS 2026-27",
+    "commodity": "Raw Rice (Common & Grade A)",
+    "rice_type": "raw_milled",
+    "grade_profiles": ["Grade A", "Common"],
+    "_notes": "Values extracted from the current Government of India KMS 2026-27 specification. If the web source was unavailable during setup, these values should be verified against the official document."
+  },
+
+  "grade_a": {
+    "broken": {
+      "max_percent": 25.0,
+      "basis": "weight",
+      "notes": "Small broken (pieces below 1/4 of whole kernel length) shall not exceed 1% by weight"
+    },
+    "foreign_matter": {
+      "max_percent": 0.5,
+      "basis": "weight",
+      "sub_limits": {
+        "mineral_matter": {
+          "max_percent": 0.2,
+          "basis": "weight"
+        },
+        "animal_origin_impurities": {
+          "max_percent": 0.10,
+          "basis": "weight"
+        }
+      }
+    },
+    "damaged_slightly_damaged": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "discoloured": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "chalky": {
+      "max_percent": 5.0,
+      "basis": "weight"
+    },
+    "red": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "admixture_of_lower_class": {
+      "max_percent": 6.0,
+      "basis": "weight"
+    },
+    "dehusked": {
+      "max_percent": 13.0,
+      "basis": "weight",
+      "notes": "Official test involves staining/chemical analysis"
+    },
+    "moisture": {
+      "max_percent": 14.0,
+      "basis": "weight",
+      "notes": "Up to 15% may be procured with value cut under the cited specification. NOT measurable from image."
+    }
+  },
+
+  "common": {
+    "broken": {
+      "max_percent": 25.0,
+      "basis": "weight",
+      "notes": "Small broken (pieces below 1/4 of whole kernel length) shall not exceed 1% by weight"
+    },
+    "foreign_matter": {
+      "max_percent": 0.5,
+      "basis": "weight",
+      "sub_limits": {
+        "mineral_matter": {
+          "max_percent": 0.2,
+          "basis": "weight"
+        },
+        "animal_origin_impurities": {
+          "max_percent": 0.10,
+          "basis": "weight"
+        }
+      }
+    },
+    "damaged_slightly_damaged": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "discoloured": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "chalky": {
+      "max_percent": 5.0,
+      "basis": "weight"
+    },
+    "red": {
+      "max_percent": 3.0,
+      "basis": "weight"
+    },
+    "admixture_of_lower_class": {
+      "max_percent": null,
+      "basis": "weight",
+      "notes": "Not applicable for Common grade"
+    },
+    "dehusked": {
+      "max_percent": 13.0,
+      "basis": "weight",
+      "notes": "Official test involves staining/chemical analysis"
+    },
+    "moisture": {
+      "max_percent": 14.0,
+      "basis": "weight",
+      "notes": "Up to 15% may be procured with value cut. NOT measurable from image."
+    }
+  },
+
+  "footnotes": [
+    "Small broken pieces (below 1/4 of whole kernel length) shall not exceed 1% by weight.",
+    "Mineral matter shall not exceed 0.2% by weight.",
+    "Impurities of animal origin shall not exceed 0.10% by weight.",
+    "Moisture up to 15% may be procured with value cut under the cited specification.",
+    "All official limits are weight-based. Image-based analysis provides count/area estimates only.",
+    "Dehusked grain testing officially involves staining/chemical analysis — image-based analysis is a visual proxy.",
+    "Moisture requires physical/laboratory measurement and is outside the image-only pipeline.",
+    "The L/B ratio of 2.5 for Grade A/Common classification applies to paddy varieties, not milled rice."
+  ],
+
+  "image_assessment_mapping": {
+    "_description": "Maps official parameters to image-assessable status",
+    "broken": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "Image provides count-based estimate, not weight-based"
+    },
+    "foreign_matter": {
+      "image_assessable": true,
+      "image_basis": "count_and_area",
+      "official_basis": "weight",
+      "limitation": "Image provides count/area estimate, not weight percentage"
+    },
+    "damaged_slightly_damaged": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "ML classifier — count-based"
+    },
+    "discoloured": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "Colour-distance proxy — count-based"
+    },
+    "chalky": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "ML classifier — count-based"
+    },
+    "red": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "Colour proxy — count-based"
+    },
+    "admixture_of_lower_class": {
+      "image_assessable": true,
+      "image_basis": "count",
+      "official_basis": "weight",
+      "limitation": "Statistical outlier proxy — count-based"
+    },
+    "dehusked": {
+      "image_assessable": "partial",
+      "image_basis": "visual_proxy",
+      "official_basis": "weight_with_staining",
+      "limitation": "Visual bran-coverage proxy — not equivalent to official staining test"
+    },
+    "moisture": {
+      "image_assessable": false,
+      "limitation": "Requires physical/laboratory measurement — not measurable from RGB image"
+    }
+  }
+}

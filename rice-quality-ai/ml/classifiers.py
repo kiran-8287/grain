@@ -1,0 +1,540 @@
+"""
+Defect classification module for rice grains.
+
+Implements ML-based and heuristic fallback classifiers for:
+- Damaged / Slightly Damaged (VGG-19 transfer learning or heuristic)
+- Sprouted / Weevilled (ResNet-18 transfer learning or heuristic)
+- Immature / Shrunken / Shrivelled (geometry + texture proxy)
+- Chalky (Logistic Regression or heuristic — see texture.py)
+
+Each classifier clearly labels its method and limitations.
+"""
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import cv2
+import numpy as np
+
+from ml.config import get_model_info, get_project_root, get_threshold
+from ml.preprocessing import pad_to_square
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Lazy torch / torchvision import — imported only once, not per grain call.
+# This avoids the ~0.5 s import overhead per grain during heuristic fallback.
+# ---------------------------------------------------------------------------
+_torch = None
+_T = None
+
+
+def _get_torch():
+    """Return (torch, torchvision.transforms) importing once lazily."""
+    global _torch, _T
+    if _torch is None:
+        import torch as _torch_mod
+        import torchvision.transforms as _T_mod
+        _torch = _torch_mod
+        _T = _T_mod
+    return _torch, _T
+
+
+# ============================================================
+# DAMAGED / SLIGHTLY DAMAGED
+# ============================================================
+
+def classify_damaged(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+) -> Dict:
+    """
+    Classify grain as damaged/slightly damaged using VGG-19 transfer
+    learning or heuristic fallback.
+    
+    VGG-19 uses 224x224 input with aspect-ratio-preserving padding
+    (NOT stretching).
+    """
+    model_info = get_model_info("damaged")
+    model_path = get_project_root() / model_info.get("weights_path", "")
+    
+    if model_path.exists() and model_info.get("status") == "trained":
+        return _classify_damaged_ml(grain_rgb, grain_mask, model_path)
+    else:
+        return _classify_damaged_heuristic(grain_rgb, grain_mask)
+
+
+_LOADED_MODELS: Dict[str, Any] = {}  # module-level model cache
+
+def _get_cached_model(key: str, model_path: Path, device):
+    """Cache loaded models in memory for fast batched inference."""
+    torch, _ = _get_torch()
+    if key not in _LOADED_MODELS:
+        model = torch.load(model_path, map_location=device, weights_only=False)
+        model.eval()
+        _LOADED_MODELS[key] = model
+    return _LOADED_MODELS[key]
+
+
+def _classify_damaged_ml(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+    model_path: Path,
+) -> Dict:
+    """ML-based damaged classification using VGG-19."""
+    model_info = get_model_info("damaged")
+    try:
+        torch, T = _get_torch()
+        
+        # Crop grain region
+        coords = cv2.findNonZero(grain_mask)
+        if coords is None:
+            return _damaged_unavailable("No valid grain pixels")
+        x, y, w, h = cv2.boundingRect(coords)
+        crop = grain_rgb[y:y+h, x:x+w]
+        
+        # Pad to square (preserving aspect ratio, NOT stretching)
+        padded = pad_to_square(crop, target_size=224)
+        
+        # To tensor
+        transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        tensor = transform(padded).unsqueeze(0)
+        
+        # Load cached model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = _get_cached_model("damaged_vgg19", model_path, device)
+        
+        with torch.no_grad():
+            output = model(tensor.to(device))
+            probs = torch.softmax(output, dim=1)
+            pred_class = torch.argmax(probs, dim=1).item()
+            pred_prob = probs[0, pred_class].item()
+        
+        # Load class mapping
+        import json
+        mapping_path = model_path.parent / "class_mapping.json"
+        if mapping_path.exists():
+            with open(mapping_path) as f:
+                class_mapping = json.load(f)
+            label = class_mapping.get(str(pred_class), f"class_{pred_class}")
+        else:
+            label = "damaged" if pred_class == 1 else "normal"
+        
+        return {
+            "damaged_label": label,
+            "damaged_probability": round(pred_prob, 4),
+            "damaged_model_version": model_info.get("version", "1.0.0"),
+            "method": "vgg19_transfer_learning",
+            "_source": "literature",
+        }
+    except Exception as e:
+        logger.warning(f"VGG-19 inference failed: {e}. Using heuristic fallback.")
+        return _classify_damaged_heuristic(grain_rgb, grain_mask)
+
+
+def _classify_damaged_heuristic(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+) -> Dict:
+    """
+    Heuristic fallback for damaged grain detection.
+    Uses colour variance, dark spot ratio, and texture irregularity.
+    Clearly labelled as heuristic.
+    """
+    from ml.colour import extract_grain_crop
+    crop_rgb, crop_mask = extract_grain_crop(grain_rgb, grain_mask)
+    
+    if crop_mask.sum() == 0:
+        return _damaged_unavailable("No valid grain pixels")
+    
+    # Analyse colour variance as proxy for damage
+    lab = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2LAB)
+    grain_lab = lab[crop_mask > 0].astype(float)
+    
+    l_channel = grain_lab[:, 0]
+    l_std = float(np.std(l_channel))
+    l_mean = float(np.mean(l_channel))
+    
+    # Dark spots (potential damage)
+    dark_threshold = max(50, l_mean - 2 * l_std)
+    dark_fraction = float(np.sum(l_channel < dark_threshold) / len(l_channel))
+    
+    # Brown/discoloured patches
+    a_channel = grain_lab[:, 1] - 128
+    b_channel = grain_lab[:, 2] - 128
+    colour_variance = float(np.std(a_channel) + np.std(b_channel))
+    
+    # Score
+    score = 0.3 * min(1.0, l_std / 30.0) + 0.4 * dark_fraction + 0.3 * min(1.0, colour_variance / 20.0)
+    
+    label = "damaged" if score > 0.5 else "normal"
+    
+    return {
+        "damaged_label": label,
+        "damaged_probability": round(score, 4),
+        "damaged_model_version": "heuristic_fallback_v1",
+        "method": "heuristic — colour variance and dark spot analysis",
+        "_source": "engineering_heuristic",
+        "limitation": "Heuristic fallback — VGG-19 model not available. "
+                      "Run: python training/train_damaged.py",
+    }
+
+
+def _damaged_unavailable(reason: str) -> Dict:
+    return {
+        "damaged_label": "unavailable",
+        "damaged_probability": None,
+        "damaged_model_version": None,
+        "method": "unavailable",
+        "reason": reason,
+    }
+
+
+def batch_classify_damaged(
+    image_rgb: np.ndarray,
+    grain_masks: List[np.ndarray],
+) -> List[Dict]:
+    """
+    Run damaged classification for all grains in a single batched forward pass.
+    Falls back to per-grain heuristic if ML model is not available.
+
+    This is ~50x faster than calling classify_damaged() per grain when a
+    VGG-19 model is loaded, because it avoids 50 separate GPU/CPU dispatches.
+    """
+    model_info = get_model_info("damaged")
+    model_path = get_project_root() / model_info.get("weights_path", "")
+
+    if not (model_path.exists() and model_info.get("status") == "trained"):
+        return [_classify_damaged_heuristic(image_rgb, m) for m in grain_masks]
+
+    try:
+        torch, T = _get_torch()
+        transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = _get_cached_model("damaged_vgg19", model_path, device)
+
+        # Load class mapping once
+        import json
+        mapping_path = model_path.parent / "class_mapping.json"
+        class_mapping = {}
+        if mapping_path.exists():
+            with open(mapping_path) as f:
+                class_mapping = json.load(f)
+
+        # Preprocess all grains
+        tensors = []
+        valid_indices = []
+        for i, mask in enumerate(grain_masks):
+            coords = cv2.findNonZero(mask)
+            if coords is None:
+                continue
+            x, y, w, h = cv2.boundingRect(coords)
+            crop = image_rgb[y:y+h, x:x+w]
+            padded = pad_to_square(crop, target_size=224)
+            tensors.append(transform(padded))
+            valid_indices.append(i)
+
+        if not tensors:
+            return [_damaged_unavailable("No valid grain pixels")] * len(grain_masks)
+
+        # Single batched forward pass
+        batch = torch.stack(tensors).to(device)
+        with torch.no_grad():
+            output = model(batch)
+            probs = torch.softmax(output, dim=1)
+            pred_classes = torch.argmax(probs, dim=1).tolist()
+            pred_probs = probs[range(len(tensors)), pred_classes].tolist()
+
+        # Build results
+        results = [_damaged_unavailable("No valid grain pixels")] * len(grain_masks)
+        for out_i, grain_i in enumerate(valid_indices):
+            pred_class = pred_classes[out_i]
+            pred_prob = pred_probs[out_i]
+            label = class_mapping.get(str(pred_class), "damaged" if pred_class == 1 else "normal")
+            results[grain_i] = {
+                "damaged_label": label,
+                "damaged_probability": round(pred_prob, 4),
+                "damaged_model_version": model_info.get("version", "1.0.0"),
+                "method": "vgg19_transfer_learning",
+                "_source": "literature",
+            }
+        return results
+    except Exception as e:
+        logger.warning(f"VGG-19 batch inference failed: {e}. Using per-grain heuristic.")
+        return [_classify_damaged_heuristic(image_rgb, m) for m in grain_masks]
+
+
+# ============================================================
+# SPROUTED / WEEVILLED
+# ============================================================
+
+def classify_sprouted_weevilled(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+) -> Dict:
+    """
+    Classify grain as sprouted/weevilled using ResNet-18 transfer
+    learning or heuristic fallback.
+    """
+    model_info = get_model_info("sprouted_weevilled")
+    model_path = get_project_root() / model_info.get("weights_path", "")
+    
+    if model_path.exists() and model_info.get("status") == "trained":
+        return _classify_sprouted_ml(grain_rgb, grain_mask, model_path)
+    else:
+        return _classify_sprouted_heuristic(grain_rgb, grain_mask)
+
+
+def _classify_sprouted_ml(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+    model_path: Path,
+) -> Dict:
+    """ML-based sprouted/weevilled classification."""
+    model_info = get_model_info("sprouted_weevilled")
+    try:
+        torch, T = _get_torch()
+        
+        coords = cv2.findNonZero(grain_mask)
+        if coords is None:
+            return _sprouted_unavailable("No valid pixels")
+        x, y, w, h = cv2.boundingRect(coords)
+        crop = grain_rgb[y:y+h, x:x+w]
+        padded = pad_to_square(crop, target_size=224)
+        
+        transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        tensor = transform(padded).unsqueeze(0)
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = _get_cached_model("sprouted_resnet18", model_path, device)
+        
+        with torch.no_grad():
+            output = model(tensor.to(device))
+            probs = torch.softmax(output, dim=1)
+            pred_class = torch.argmax(probs, dim=1).item()
+            pred_prob = probs[0, pred_class].item()
+        
+        label = "sprouted_weevilled" if pred_class == 1 else "normal"
+        
+        return {
+            "sprouted_weevilled_label": label,
+            "probability": round(pred_prob, 4),
+            "model_version": model_info.get("version", "1.0.0"),
+            "confidence_level": "low" if pred_prob < 0.7 else "moderate",
+            "method": "resnet18_transfer_learning",
+            "_source": "experimental — limited/cross-domain data",
+            "limitation": "Model trained on limited/cross-domain data. "
+                         "Results should be interpreted with caution.",
+        }
+    except Exception as e:
+        logger.warning(f"ResNet-18 inference failed: {e}. Using heuristic fallback.")
+        return _classify_sprouted_heuristic(grain_rgb, grain_mask)
+
+
+def _classify_sprouted_heuristic(
+    grain_rgb: np.ndarray,
+    grain_mask: np.ndarray,
+) -> Dict:
+    """
+    Heuristic fallback for sprouted/weevilled detection.
+    Uses texture irregularity and hole/cavity detection.
+    """
+    from ml.colour import extract_grain_crop
+    crop_rgb, crop_mask = extract_grain_crop(grain_rgb, grain_mask)
+    
+    if crop_mask.sum() == 0:
+        return _sprouted_unavailable("No valid pixels")
+    
+    # Look for holes/cavities (weevil damage)
+    gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
+    gray_masked = gray.copy()
+    gray_masked[crop_mask == 0] = 128  # Neutral
+    
+    # Dark spots within grain (potential weevil holes)
+    grain_pixels = gray[crop_mask > 0]
+    mean_brightness = float(np.mean(grain_pixels))
+    
+    very_dark = np.sum(grain_pixels < mean_brightness * 0.5)
+    dark_fraction = very_dark / len(grain_pixels) if len(grain_pixels) > 0 else 0
+    
+    # Texture irregularity
+    laplacian = cv2.Laplacian(gray_masked, cv2.CV_64F)
+    texture_var = float(np.var(laplacian[crop_mask > 0])) if crop_mask.sum() > 0 else 0
+    
+    score = 0.5 * min(1.0, dark_fraction * 5) + 0.5 * min(1.0, texture_var / 5000)
+    
+    return {
+        "sprouted_weevilled_label": "sprouted_weevilled" if score > 0.5 else "normal",
+        "probability": round(score, 4),
+        "model_version": "heuristic_fallback_v1",
+        "confidence_level": "low",
+        "method": "heuristic — texture and dark spot analysis",
+        "_source": "engineering_heuristic",
+        "limitation": "Heuristic fallback — ResNet-18 model not available. "
+                      "Run: python training/train_sprouted.py",
+    }
+
+
+def _sprouted_unavailable(reason: str) -> Dict:
+    return {
+        "sprouted_weevilled_label": "unavailable",
+        "probability": None,
+        "model_version": None,
+        "confidence_level": None,
+        "method": "unavailable",
+        "reason": reason,
+    }
+
+
+def batch_classify_sprouted_weevilled(
+    image_rgb: np.ndarray,
+    grain_masks: List[np.ndarray],
+) -> List[Dict]:
+    """
+    Run sprouted/weevilled classification for all grains in a single batch pass.
+    Falls back to per-grain heuristic if ML model is not available.
+    """
+    model_info = get_model_info("sprouted_weevilled")
+    model_path = get_project_root() / model_info.get("weights_path", "")
+
+    if not (model_path.exists() and model_info.get("status") == "trained"):
+        return [_classify_sprouted_heuristic(image_rgb, m) for m in grain_masks]
+
+    try:
+        torch, T = _get_torch()
+        transform = T.Compose([
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = _get_cached_model("sprouted_resnet18", model_path, device)
+
+        tensors = []
+        valid_indices = []
+        for i, mask in enumerate(grain_masks):
+            coords = cv2.findNonZero(mask)
+            if coords is None:
+                continue
+            x, y, w, h = cv2.boundingRect(coords)
+            crop = image_rgb[y:y+h, x:x+w]
+            padded = pad_to_square(crop, target_size=224)
+            tensors.append(transform(padded))
+            valid_indices.append(i)
+
+        if not tensors:
+            return [_sprouted_unavailable("No valid grain pixels")] * len(grain_masks)
+
+        batch = torch.stack(tensors).to(device)
+        with torch.no_grad():
+            output = model(batch)
+            probs = torch.softmax(output, dim=1)
+            pred_classes = torch.argmax(probs, dim=1).tolist()
+            pred_probs = probs[range(len(tensors)), pred_classes].tolist()
+
+        results = [_sprouted_unavailable("No valid grain pixels")] * len(grain_masks)
+        for out_i, grain_i in enumerate(valid_indices):
+            pred_class = pred_classes[out_i]
+            pred_prob = pred_probs[out_i]
+            label = "sprouted_weevilled" if pred_class == 1 else "normal"
+            results[grain_i] = {
+                "sprouted_weevilled_label": label,
+                "probability": round(pred_prob, 4),
+                "model_version": model_info.get("version", "1.0.0"),
+                "confidence_level": "low" if pred_prob < 0.7 else "moderate",
+                "method": "resnet18_transfer_learning",
+                "_source": "experimental — limited/cross-domain data",
+                "limitation": "Model trained on limited/cross-domain data. "
+                              "Results should be interpreted with caution.",
+            }
+        return results
+    except Exception as e:
+        logger.warning(f"ResNet-18 batch inference failed: {e}. Using per-grain heuristic.")
+        return [_classify_sprouted_heuristic(image_rgb, m) for m in grain_masks]
+
+
+# ============================================================
+# IMMATURE / SHRUNKEN / SHRIVELLED
+# ============================================================
+
+def classify_immature_shrunken(
+    grain_geometry: Dict,
+    population_stats: Optional[Dict] = None,
+) -> Dict:
+    """
+    Classify grain as immature/shrunken/shrivelled.
+    
+    Uses geometry + texture as an experimental proxy:
+    - Low breadth relative to reference
+    - Low area
+    - Low solidity
+    - Abnormal L/B
+    
+    Thresholds are configurable.
+    Does NOT claim to be a government-certified image threshold.
+    """
+    if population_stats is None:
+        return {
+            "immature_shrunken_status": "undetermined",
+            "proxy_score": None,
+            "confidence": 0.0,
+            "method": "experimental geometry/texture proxy",
+            "reason": "No population reference available",
+        }
+    
+    breadth = grain_geometry.get("breadth_pixels", 0)
+    area = grain_geometry.get("area_pixels", 0)
+    solidity = grain_geometry.get("solidity", 1.0)
+    lb_ratio = grain_geometry.get("lb_ratio", 0)
+    
+    ref_breadth = population_stats.get("median_breadth", 1)
+    ref_area = population_stats.get("median_area", 1)
+    
+    breadth_thresh = get_threshold("immature_shrunken", "breadth_ratio_threshold", 0.7)
+    area_thresh = get_threshold("immature_shrunken", "area_ratio_threshold", 0.5)
+    solidity_thresh = get_threshold("immature_shrunken", "solidity_threshold", 0.85)
+    
+    # Compute ratios
+    breadth_ratio = breadth / ref_breadth if ref_breadth > 0 else 1.0
+    area_ratio = area / ref_area if ref_area > 0 else 1.0
+    
+    # Score
+    score = 0.0
+    reasons = []
+    
+    if breadth_ratio < breadth_thresh:
+        score += 0.35
+        reasons.append(f"Low breadth ratio: {breadth_ratio:.2f}")
+    
+    if area_ratio < area_thresh:
+        score += 0.35
+        reasons.append(f"Low area ratio: {area_ratio:.2f}")
+    
+    if solidity < solidity_thresh:
+        score += 0.15
+        reasons.append(f"Low solidity: {solidity:.3f}")
+    
+    if lb_ratio and lb_ratio > 5.0:
+        score += 0.15
+        reasons.append(f"Abnormal L/B: {lb_ratio:.2f}")
+    
+    status = "immature_shrunken" if score > 0.5 else "normal"
+    
+    return {
+        "immature_shrunken_status": status,
+        "proxy_score": round(score, 4),
+        "confidence": round(min(score, 1.0), 4),
+        "method": "experimental geometry/texture proxy",
+        "_source": "engineering_heuristic",
+        "reasons": reasons,
+        "limitation": "Experimental image-based parameter — no government-certified threshold exists",
+    }

@@ -1,0 +1,75 @@
+{
+  "segmentation": {
+    "model": "mask_rcnn",
+    "backbone": "resnet50_fpn",
+    "confidence_threshold": 0.5,
+    "nms_threshold": 0.3,
+    "min_grain_area_pixels": 50,
+    "max_inference_size": 1024,
+    "fallback": "classical_cv",
+    "_source": "engineering heuristic"
+  },
+  "chalky": {
+    "model": "logistic_regression",
+    "probability_threshold": 0.5,
+    "fallback": "heuristic_lab_brightness",
+    "_source": "literature — logistic regression on LAB/GLCM features"
+  },
+  "damaged": {
+    "model": "vgg19_transfer",
+    "input_size": 224,
+    "probability_threshold": 0.5,
+    "pad_to_square": true,
+    "fallback": "heuristic_texture",
+    "_source": "literature — VGG-19 transfer learning"
+  },
+  "foreign_matter": {
+    "model": "yolo11n",
+    "confidence_threshold": 0.4,
+    "nms_threshold": 0.45,
+    "classes": ["stone", "inorganic", "organic", "other_foreign_matter"],
+    "_source": "engineering heuristic — YOLO fine-tuned"
+  },
+  "sprouted_weevilled": {
+    "model": "resnet18_transfer",
+    "input_size": 224,
+    "probability_threshold": 0.5,
+    "fallback": "heuristic_texture",
+    "_source": "experimental — ResNet-18 transfer, limited data"
+  },
+  "red": {
+    "method": "colour_analysis",
+    "colour_spaces": ["LAB", "HSV"],
+    "_source": "engineering heuristic — colour-based proxy"
+  },
+  "discoloured": {
+    "method": "lab_colour_distance",
+    "_source": "engineering heuristic — DeltaE colour distance"
+  },
+  "dehusked": {
+    "method": "visual_bran_coverage",
+    "_source": "experimental — visual proxy, not equivalent to official staining test"
+  },
+  "immature_shrunken": {
+    "method": "geometry_texture_proxy",
+    "_source": "experimental — geometry and texture based proxy"
+  },
+  "broken": {
+    "method": "robust_whole_kernel_estimator",
+    "threshold_fraction": 0.75,
+    "robust_iterations": 3,
+    "robust_filter_fraction": 0.85,
+    "_source": "official concept — kernel below three-fourths of whole-kernel length"
+  },
+  "admixture": {
+    "method": "mahalanobis_distance",
+    "min_grains_required": 10,
+    "outlier_threshold": 3.0,
+    "_source": "engineering heuristic — statistical proxy"
+  },
+  "device": {
+    "use_gpu": true,
+    "gpu_device": 0,
+    "cpu_fallback": true
+  }
+}

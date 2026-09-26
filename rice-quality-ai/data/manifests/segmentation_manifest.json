@@ -1,0 +1,14 @@
+{
+  "dataset_name": "rice_grain_instance_segmentation_coco",
+  "annotation_format": "COCO Instance Segmentation",
+  "num_classes": 2,
+  "classes": {
+    "0": "background",
+    "1": "rice_grain"
+  },
+  "source": "Rice Instance Segmentation Public Dataset",
+  "splits": {
+    "train": "data/processed/segmentation/train.json",
+    "val": "data/processed/segmentation/val.json"
+  }
+}
