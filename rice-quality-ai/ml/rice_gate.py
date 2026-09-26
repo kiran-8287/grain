@@ -430,17 +430,19 @@ def _gate_payload(
 
     crowded = total >= int(cfg.get("min_objects_for_fraction_rule", 25))
     min_fraction = float(cfg.get("min_rice_fraction_of_detections", 0.0))
-    sparse = bool(rice) and crowded and rice_fraction < min_fraction
+    sparse_warning = bool(rice) and crowded and rice_fraction < min_fraction
 
-    if sparse:
-        status = STATUS_NOT_RICE_SPARSE
-        message = MESSAGE_NOT_RICE_SPARSE
+    if sparse_warning:
+        warnings.append(
+            "Low rice-object fraction in a crowded scene: detector recall may be poor. "
+            "This is a warning only and does not force a NOT_RICE decision."
+        )
 
-    has_rice = bool(rice) and not sparse
+    has_rice = bool(rice)
     gate_result = "PASSED" if has_rice else "FAILED"
     reason = (
-        "rice_detections_too_sparse"
-        if sparse
+        "low_object_rice_fraction_warning"
+        if sparse_warning
         else ("rice_detected" if rice else "no_rice_class_detections")
     )
 
@@ -450,6 +452,7 @@ def _gate_payload(
         f"Rice fraction: {rice_fraction:.3f} "
         f"(min {min_fraction:.2f} when >= {int(cfg.get('min_objects_for_fraction_rule', 25))} objects)"
         f" | Rice confidence threshold: {threshold} | Rice gate: {gate_result}"
+        f" | low object fraction is diagnostic only"
     )
 
     return {
@@ -646,10 +649,28 @@ def evaluate_rice_presence(image_rgb: np.ndarray) -> Dict[str, Any]:
         else RICE_GATE_METHOD
     )
     payload["model_status"] = (
-        "trained (learned rice-vs-non-rice gate active)"
+        "trained (experimental synthetic-feature artifact; not real-image validated)"
         if any(d.get("model_source") == "learned_rice_gate" for d in detections)
         else _MODEL_STATUS
     )
+    learned_gate_active = any(
+        d.get("model_source") == "learned_rice_gate" for d in detections
+    )
+    payload["model_data_provenance"] = (
+        "synthetic_hand_sampled_feature_vectors_only"
+        if learned_gate_active
+        else "classical_cv_heuristic"
+    )
+    payload["model_confidence_calibrated"] = False
+    if learned_gate_active:
+        payload["limitation"] = (
+            "The existing learned gate artifact was trained on hand-sampled synthetic "
+            "feature vectors, not a real labeled image corpus. Its score is experimental "
+            "and uncalibrated; the existing gate decision path is retained for regression compatibility."
+        )
+        payload["warnings"].append(
+            "Rice-gate learned score is experimental: checkpoint training used synthetic feature vectors, not real labeled images."
+        )
 
     # Backwards-compatible summary keys (previously returned by
     # ml.segmentation.detect_rice_presence)

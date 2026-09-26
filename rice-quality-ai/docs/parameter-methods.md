@@ -23,11 +23,10 @@ This document provides complete technical specifications for how each of the exa
 ### 2. Damaged / Slightly Damaged Grain
 - **Scope**: Per-Grain
 - **Definition**: Kernels with visible discolouration, insect bites, or fungal lesions affecting kernel integrity.
-- **Why ML**: Visual patterns of rot, cracks, and mold are spatially complex and vary across varieties. Transfer learning on deep representations captures these textures better than brittle color slicing.
-- **Architecture**: VGG-19 transfer learning fine-tuned on grain crops.
-- **Input Preprocessing**: Bounding box crop padded to square ($224 \times 224$) via `pad_to_square` preserving aspect ratio (never stretched).
-- **Fallback**: Color variance and dark-spot ratio heuristic when weights are absent.
-- **Scientific Classification**: Literature-Supported ML.
+- **Checkpoint**: VGG-19 with binary classes `normal` and `damaged`; no separate slightly-damaged class.
+- **Training evidence**: 80 generated training illustrations and 30 generated test illustrations; no real rice images and no validation split. The checkpoint is experimental, not validated.
+- **Inference preprocessing**: Instance mask applied, black exterior fill, aspect-preserving square crop, ImageNet normalization.
+- **Scientific Classification**: Synthetic/demo ML; experimental and uncalibrated. The color-variance fallback is a separate computer-vision heuristic.
 
 ---
 
@@ -59,10 +58,10 @@ This document provides complete technical specifications for how each of the exa
 ### 5. Red Grain
 - **Scope**: Per-Grain
 - **Definition**: Kernels having more than one-fourth of their surface area covered with red cuticle/bran layer.
-- **Method**: Color distribution in LAB ($a^* > 132$) and HSV ($H \in [0, 20] \cup [165, 180]$ with moderate saturation).
+- **Method**: LAB mean $a^*$ threshold (10 in OpenCV-centered channel units) plus HSV red hue and saturation/value masks; flagged when red pixels cover at least 15% of mask pixels.
 - **Formula**:
   $$\text{Red Fraction} = \frac{\sum \text{pixels}_{\text{red}}}{\sum \text{pixels}_{\text{grain}}}$$
-  Flagged as red if fraction $\ge 0.25$.
+  The code's engineering threshold is 0.15; it is not a validated or official image threshold.
 - **Scientific Classification**: Official Concept Threshold implemented via Image-Based Color Proxy.
 
 ---
@@ -87,8 +86,8 @@ This document provides complete technical specifications for how each of the exa
 ### 8. Sprouted / Weevilled
 - **Scope**: Per-Grain
 - **Definition**: Grains exhibiting germinated shoots at the embryo tip or bored holes/tunnels caused by insects (weevils).
-- **Method**: ResNet-18 transfer learning on padded crops ($224 \times 224$).
-- **Fallback**: Laplacian texture variance and deep cavity detection.
+- **Method**: ResNet-18 synthetic-demo checkpoint on mask-normalized crops ($224 \times 224$); the existing checkpoint has not been validated on real rice.
+- **Fallback**: Laplacian texture variance and dark-spot proxy when model weights are unavailable.
 - **Scientific Classification**: Experimental ML; checked-in checkpoint was trained on synthetic demonstration crops and is not validated on real rice grains.
 
 ---
@@ -96,22 +95,20 @@ This document provides complete technical specifications for how each of the exa
 ### 9. Foreign Matter
 - **Scope**: Sample-Level (Evaluated across the entire image)
 - **Definition**: All organic (chaff, weed seeds, straw) and inorganic (stones, mud, sand) matter other than rice kernels.
-- **Method**: Full-image object detection using fine-tuned YOLO11n.
+- **Method**: YOLO11n is configured but no checkpoint or local dataset is available; full-image color/contour heuristic fallback remains active.
+- **Dataset evidence**: The manifest lists intended source names and an 80/20 train/validation plan, but image/annotation files and class coverage are absent; provenance is unknown.
 - **Weight Limitation**: Official limits are by weight ($\le 0.5\%$). Camera images measure area and count. Output is explicitly labeled: `"Image-based count/area estimate — not official laboratory weight percentage."`
-- **Scientific Classification**: Literature-Supported ML.
+- **Scientific Classification**: Computer-vision heuristic; configured detector is untrained.
 
 ---
 
 ### 10. Admixture of Lower Class
 - **Scope**: Sample-Level (NOT assigned to individual grains)
 - **Definition**: Rice of another variety/class mixed into the sample (e.g., Common rice mixed into Grade A).
-- **Method**:
-  1. Filter out broken grains and uncertain segmentations.
-  2. Compute multivariate geometry vector: $[L, B, L/B, \text{Area}, \text{Solidity}]$.
-  3. Calculate robust covariance and Mahalanobis distance:
-     $$D_M(x) = \sqrt{(x - \mu)^T \Sigma^{-1} (x - \mu)}$$
-  4. Kernels with $D_M > 3.0$ are counted as statistical admixture outliers.
-- **Scientific Classification**: Statistical Distribution Proxy; configured limit is historical/reference only, not verified as current KMS 2026-27.
+- **Current Status**: Unsupported. The API returns `admixture_status: unsupported`, nulls the admixture count/fraction, and states that a geometry outlier is not evidence that a grain belongs to a lower class/variety.
+- **Diagnostic Only**: Mahalanobis geometry outlier count/fraction may be exposed separately; they are not counted as admixture and do not produce an admixture percentage.
+- **Needed Evidence**: A defined lower-class label/ground truth and a source-grouped dataset linking visual grains to the relevant class/variety.
+- **Scientific Classification**: Lower-class admixture is not currently measurable from the implemented visual features. Any standard reference is historical/reference only; current KMS 2026-27 is unverified.
 
 ---
 

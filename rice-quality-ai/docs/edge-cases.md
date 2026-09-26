@@ -10,9 +10,9 @@ This document details how the rice quality analysis system handles complex real-
 |---|---|---|
 | **$N = 0$** | Halts processing early. No fake grain measurements are generated. | Displays `"No rice grains detected. Please upload an image containing rice grains."` |
 | **$N = 1$** | Fully segments and analyzes the single grain. Computes all geometric dimensions, classifications, and color profiles. Broken kernel distribution reference marked as `undetermined`. | Shows `"Sample size: 1 grain"` warning: *"Individual-grain analysis is possible, but sample-level quality percentages are not representative of a larger rice lot."* Percentage labeled as `"Observed sample fraction"`. |
-| **$N = 2$ to $9$** | Segments each grain, assigns individual IDs `#1..#N`, computes geometry and defect labels. Broken status marked undetermined if whole reference cannot be established. | Shows small-sample advisory banner: *"Observed sample size is below statistical threshold (30 grains)."* |
-| **$N = 10$ to $29$** | Segments each grain. Admixture analysis runs with limited confidence. | Small-sample advisory displayed. |
-| **$N = 30$ to $999$** | Full statistical population modeling, robust whole-kernel length estimation, and Mahalanobis admixture outlier detection. | Full confidence dashboard. |
+| **$N = 2$ to $9$** | Segments each grain, assigns individual IDs `#1..#N`, computes geometry and defect labels. Broken status marked undetermined if whole reference cannot be established. | Shows small-sample advisory banner: *"Below the project screening threshold (30 grains; engineering threshold, not an official requirement)."* |
+| **$N = 10$ to $29$** | Segments each grain. Geometry outlier diagnostic may run, but lower-class admixture remains unsupported. | Small-sample advisory displayed; official lot status is not determinable. |
+| **$N = 30$ to $999$** | The project screening threshold permits image-based screening statuses; a geometry outlier remains diagnostic only and does not establish admixture or official lot quality. | Full dashboard with explicit model/proxy provenance and no claim of official compliance. |
 | **$N \ge 1000$** | High throughput memory-safe processing, vectorized feature extraction, and cached model inference. | Full dashboard with processing time benchmark. |
 
 ---
@@ -24,7 +24,7 @@ The system **does not reject images with less than 12 megapixels**.
 - Quality is evaluated **after segmentation** via:
   1. Median grain pixel area
   2. Bounding box width/height
-  3. Laplacian blur variance ($> 50$)
+  3. Mask-scoped Laplacian blur variance (engineering threshold; calibration against human review is still required)
   4. Illumination uniformity
 
 ---

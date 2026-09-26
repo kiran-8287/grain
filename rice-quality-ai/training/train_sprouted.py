@@ -57,6 +57,8 @@ class ManifestSproutedDataset(Dataset):
             )
 
         self.samples = []
+        positive_label_types = set()
+        has_combined_positive_label = False
         with manifest_path.open(newline="", encoding="utf-8") as manifest_file:
             rows = csv.DictReader(manifest_file)
             required = {"image_path", "mask_path", "label", "source_group"}
@@ -69,6 +71,10 @@ class ManifestSproutedDataset(Dataset):
                 group = row["source_group"].strip()
                 if label_name not in self.LABEL_IDS or not group:
                     raise ValueError(f"Invalid label or source_group in row: {row}")
+                if label_name in {"sprouted", "weevilled"}:
+                    positive_label_types.add(label_name)
+                elif label_name == "sprouted_weevilled":
+                    has_combined_positive_label = True
                 self.samples.append((
                     (self.data_dir / row["image_path"]).resolve(),
                     (self.data_dir / row["mask_path"]).resolve(),
@@ -80,6 +86,11 @@ class ManifestSproutedDataset(Dataset):
         self.groups = np.asarray([sample[3] for sample in self.samples])
         if set(self.labels) != {0, 1}:
             raise ValueError("The real sprouted dataset must contain normal and positive grains")
+        if not has_combined_positive_label and positive_label_types != {"sprouted", "weevilled"}:
+            raise ValueError(
+                "Combined Sprouted / Weevilled training requires explicit combined-positive "
+                "labels or both sprouted and weevilled labels; one condition cannot stand in for the other"
+            )
         self.transform = T.Compose([
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),

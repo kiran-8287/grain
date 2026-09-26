@@ -61,7 +61,7 @@ def classify_damaged(
     model_info = get_model_info("damaged")
     model_path = get_project_root() / model_info.get("weights_path", "")
     
-    if model_path.exists() and model_info.get("status") == "trained":
+    if model_path.exists() and model_info.get("status") in ("trained", "experimental"):
         return _classify_damaged_ml(grain_rgb, grain_mask, model_path)
     else:
         return _classify_damaged_heuristic(grain_rgb, grain_mask)
@@ -89,15 +89,10 @@ def _classify_damaged_ml(
     try:
         torch, T = _get_torch()
         
-        # Crop grain region
-        coords = cv2.findNonZero(grain_mask)
-        if coords is None:
+        # Match synthetic training's black exterior while excluding background pixels.
+        padded = masked_grain_square_crop(grain_rgb, grain_mask, target_size=224)
+        if padded is None:
             return _damaged_unavailable("No valid grain pixels")
-        x, y, w, h = cv2.boundingRect(coords)
-        crop = grain_rgb[y:y+h, x:x+w]
-        
-        # Pad to square (preserving aspect ratio, NOT stretching)
-        padded = pad_to_square(crop, target_size=224)
         
         # To tensor
         transform = T.Compose([
@@ -129,9 +124,15 @@ def _classify_damaged_ml(
         return {
             "damaged_label": label,
             "damaged_probability": round(pred_prob, 4),
+            "confidence": round(pred_prob, 4),
+            "confidence_basis": "softmax score for predicted class; not calibrated",
+            "class_mapping": class_mapping,
+            "model_status": model_info.get("status", "experimental"),
+            "training_dataset": model_info.get("dataset"),
             "damaged_model_version": model_info.get("version", "1.0.0"),
             "method": "vgg19_transfer_learning",
-            "_source": "literature",
+            "_source": "experimental_synthetic_training",
+            "limitation": "Checkpoint was trained on synthetic generated grain illustrations, not labeled rice grains; prediction and score are experimental and uncalibrated.",
         }
     except Exception as e:
         logger.warning(f"VGG-19 inference failed: {e}. Using heuristic fallback.")
@@ -210,7 +211,10 @@ def batch_classify_damaged(
     model_info = get_model_info("damaged")
     model_path = get_project_root() / model_info.get("weights_path", "")
 
-    if not (model_path.exists() and model_info.get("status") == "trained"):
+    if not (
+        model_path.exists()
+        and model_info.get("status") in ("trained", "experimental")
+    ):
         return [_classify_damaged_heuristic(image_rgb, m) for m in grain_masks]
 
     try:
@@ -234,12 +238,9 @@ def batch_classify_damaged(
         tensors = []
         valid_indices = []
         for i, mask in enumerate(grain_masks):
-            coords = cv2.findNonZero(mask)
-            if coords is None:
+            padded = masked_grain_square_crop(image_rgb, mask, target_size=224)
+            if padded is None:
                 continue
-            x, y, w, h = cv2.boundingRect(coords)
-            crop = image_rgb[y:y+h, x:x+w]
-            padded = pad_to_square(crop, target_size=224)
             tensors.append(transform(padded))
             valid_indices.append(i)
 
@@ -263,9 +264,15 @@ def batch_classify_damaged(
             results[grain_i] = {
                 "damaged_label": label,
                 "damaged_probability": round(pred_prob, 4),
+                "confidence": round(pred_prob, 4),
+                "confidence_basis": "softmax score for predicted class; not calibrated",
+                "class_mapping": class_mapping,
+                "model_status": model_info.get("status", "experimental"),
+                "training_dataset": model_info.get("dataset"),
                 "damaged_model_version": model_info.get("version", "1.0.0"),
                 "method": "vgg19_transfer_learning",
-                "_source": "literature",
+                "_source": "experimental_synthetic_training",
+                "limitation": "Checkpoint was trained on synthetic generated grain illustrations, not labeled rice grains; prediction and score are experimental and uncalibrated.",
             }
         return results
     except Exception as e:
@@ -404,6 +411,7 @@ def _classify_sprouted_ml(
             "predicted_class_index": pred_class,
             "class_mapping": class_mapping,
             "decision_threshold": decision_threshold,
+            "model_status": "experimental / uncalibrated",
             "model_version": model_info.get("version", "1.0.0"),
             "confidence_level": "low" if pred_prob < 0.7 else "moderate",
             "method": "resnet18_transfer_learning",
@@ -539,6 +547,7 @@ def batch_classify_sprouted_weevilled(
                 "predicted_class_index": pred_class,
                 "class_mapping": class_mapping,
                 "decision_threshold": decision_threshold,
+                "model_status": "experimental / uncalibrated",
                 "model_version": model_info.get("version", "1.0.0"),
                 "confidence_level": "low" if pred_prob < 0.7 else "moderate",
                 "method": "resnet18_transfer_learning",

@@ -26,21 +26,19 @@ python training/train_chalky.py
 
 ---
 
-## 2. Damaged Grain Classifier (VGG-19 Transfer Learning)
+## 2. Damaged Grain Classifier (Experimental VGG-19 Checkpoint)
 
 - **Script**: `training/train_damaged.py`
 - **Output Artifacts**:
   - `models/damaged/model.pth`
   - `models/damaged/class_mapping.json`
   - `models/damaged/metadata.json`
-- **Architecture**: Pretrained VGG-19 with frozen convolutional feature extractor and fine-tuned fully connected classifier head (`Dropout(0.5) -> Linear(4096, 2)`).
-- **Aspect Ratio Safeguard**: Crops are padded to square ($224 \times 224$) via `pad_to_square` (never stretched).
-- **Optimization**: Adam optimizer ($lr=10^{-3}$) with CrossEntropyLoss.
+- **Architecture**: VGG-19 checkpoint with classes `normal` and `damaged`; it has no distinct slightly-damaged class.
+- **Checkpoint provenance**: Synthetic generated illustrations only: 80 train crops and 30 test crops, no validation set. Synthetic test metrics were removed from active metadata.
+- **Status**: Experimental and uncalibrated. `training/train_damaged.py` refuses to overwrite artifacts with synthetic results. A reviewed real-data trainer and labeled rice dataset are not available.
+- **Inference preprocessing**: Instance-mask crop, black exterior fill, aspect-preserving 224 square, and ImageNet normalization. The softmax score is not calibrated.
 
-To train:
-```bash
-python training/train_damaged.py
-```
+Training is intentionally blocked: the real labeled dataset and a reviewed real-data trainer are not present. Do not use the legacy synthetic crop generator to produce published metrics.
 
 ---
 

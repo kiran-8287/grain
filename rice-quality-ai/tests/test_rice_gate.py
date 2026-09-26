@@ -103,6 +103,24 @@ def create_rice_plus_stone_image(img_size: int = 700) -> bytes:
     return _encode(img)
 
 
+def create_many_rice_image(img_size: int = 900, rows: int = 7, cols: int = 8) -> bytes:
+    """Many rice grains on a dark tray background to reproduce the false NOT_RICE bug."""
+    img = np.full((img_size, img_size, 3), 12, dtype=np.uint8)
+    rng = np.random.default_rng(42)
+    start_x = 80
+    start_y = 80
+    step_x = (img_size - 160) // cols
+    step_y = (img_size - 160) // rows
+
+    for r in range(rows):
+        for c in range(cols):
+            cx = start_x + c * step_x + int(rng.integers(-10, 10))
+            cy = start_y + r * step_y + int(rng.integers(-10, 10))
+            angle = int(rng.integers(-25, 25))
+            cv2.ellipse(img, (cx, cy), (32 + int(rng.integers(-4, 4)), 10 + int(rng.integers(-2, 2))), angle, 0, 360, (235, 235, 235), -1)
+    return _encode(img)
+
+
 def test_class_mapping_comes_from_model_configuration():
     """The gate must use the project's real class names / IDs, not invented ones."""
     mappings = load_project_class_mappings(force_reload=True)
@@ -190,6 +208,9 @@ def test_learned_gate_is_primary_when_model_is_available(monkeypatch):
     assert result["has_rice"] is True
     assert result["method"] == "learned_rice_gate"
     assert result["model_status"].startswith("trained")
+    assert result["model_data_provenance"] == "synthetic_hand_sampled_feature_vectors_only"
+    assert result["model_confidence_calibrated"] is False
+    assert any("synthetic feature vectors" in warning for warning in result["warnings"])
 
 
 # TEST 2 — one valid rice grain
@@ -266,3 +287,17 @@ def test_case4_background_only_is_not_rice(pipeline):
     assert gate["analysis_stopped"] is True
     assert res["grains"] == []
     assert res["summary"] == {}
+
+
+def test_many_rice_scene_on_dark_background_is_rice(pipeline):
+    """A many-rice scene must not be rejected merely because a detector misses many grains."""
+    res = pipeline.analyze(create_many_rice_image())
+    gate = res["rice_gate"]
+
+    assert res["success"] is True
+    assert res["rice_detected"] is True
+    assert gate["status"] in ("RICE",)
+    assert gate["has_rice"] is True
+    assert gate["analysis_stopped"] is False
+    assert gate["rice_detections"] >= 1
+    assert res["summary"], "many-rice scene must continue to segmentation and analysis"

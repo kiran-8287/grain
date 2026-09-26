@@ -120,11 +120,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
         <h1 className="text-3xl font-extrabold text-text-primary tracking-tight sm:text-4xl">
           Automated Rice Grain Quality Analysis
         </h1>
-        <p className="mt-2 text-base text-text-secondary max-w-2xl mx-auto">
-          Upload any photograph of raw milled rice grains (1 grain to thousands, on any background).
-          Calculates all 14 official & engineering parameters with standards screening.
-        </p>
-
         {/* Quick Demo Previews */}
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
           <span className="text-text-secondary flex items-center gap-1">
@@ -200,7 +195,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
                 Drag and drop your rice image here, or <span className="text-brand underline underline-offset-2">browse</span>
               </div>
               <p className="text-xs text-text-muted max-w-md">
-                Supports JPG, PNG, WEBP, and TIFF. No minimum megapixel restriction. Any lighting or arbitrary background.
+                Supports JPG, PNG, WEBP, and TIFF. No fixed megapixel gate; results still depend on grain pixels, focus, contrast, and segmentation.
               </p>
             </div>
           )}

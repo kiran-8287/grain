@@ -9,7 +9,7 @@ Orchestrates the complete image-based quality analysis:
 5. Computes per-grain geometry (Length, Breadth, L/B ratio, Area, Solidity, etc.)
 6. Classifies 8 defect types per grain (multi-label)
 7. Detects full-image foreign matter (YOLO or heuristic)
-8. Computes sample-level admixture of lower class
+8. Computes a geometry outlier diagnostic; lower-class admixture is unsupported
 9. Computes sample-level summary statistics
 10. Evaluates image quality indicators & assigns tier
 11. Compares observed image fractions with historical/reference rice limits
@@ -60,7 +60,6 @@ from ml.rice_gate import (
     STATUS_NO_ANALYSABLE_RICE,
     STATUS_NO_RICE_CLASS,
     STATUS_NOT_RICE,
-    STATUS_NOT_RICE_SPARSE,
 )
 from ml.segmentation import (
     GrainInstance,
@@ -169,7 +168,6 @@ class RiceQualityPipeline:
         gate_status = rice_gate.get("status")
         if gate_status in (
             STATUS_NOT_RICE,
-            STATUS_NOT_RICE_SPARSE,
             STATUS_NO_ANALYSABLE_RICE,
             STATUS_NO_RICE_CLASS,
         ) or not rice_gate.get("has_rice", False):
@@ -186,6 +184,7 @@ class RiceQualityPipeline:
             )
 
         logger.info("Rice gate PASSED. %s", rice_gate.get("debug", ""))
+        warnings.extend(rice_gate.get("warnings", []))
 
         if rice_gate["confidence"] < 0.5:
             warnings.append(
@@ -492,6 +491,9 @@ class RiceQualityPipeline:
             ),
             "admixture_count": admixture_res.get("admixture_count", 0),
             "admixture_analyzed_count": admixture_analyzed_count,
+            "admixture_status": admixture_res.get("admixture_status", "unsupported"),
+            "geometry_outlier_count": admixture_res.get("geometry_outlier_count"),
+            "geometry_outlier_fraction": admixture_res.get("geometry_outlier_fraction"),
             "broken_count": broken_count,
             "broken_percent": to_pct(broken_count, broken_analyzed_count) if broken_analyzed_count else None,
             "broken_analyzed_count": broken_analyzed_count,
@@ -540,12 +542,19 @@ class RiceQualityPipeline:
         }
 
         # 11. Image Quality Assessment
+        grain_quality_mask = np.zeros((h, w), dtype=np.uint8)
+        for grain_mask in grain_masks_list:
+            if grain_mask.shape == grain_quality_mask.shape:
+                grain_quality_mask = cv2.bitwise_or(grain_quality_mask, grain_mask)
+
         quality_res = assess_image_quality(
             image_rgb=image_rgb,
             grain_areas=grain_areas,
             grain_confidences=grain_confidences,
             uncertain_count=seg_result.uncertain_count,
             total_count=n_grains,
+            segmentation_qualities=seg_qualities,
+            grain_mask=grain_quality_mask,
         )
 
         # 12. Historical/reference screening with sample- and quality-based suppression.

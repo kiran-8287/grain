@@ -90,7 +90,7 @@ def compare_with_standards(
         image_assessable = assess_info.get("image_assessable", False)
         limitation = assess_info.get("limitation", "")
         
-        if not image_assessable:
+        if image_assessable is not True:
             status = "NOT ASSESSABLE"
             difference = None
         elif max_percent is None:
@@ -101,8 +101,9 @@ def compare_with_standards(
             difference = None
             if sample_too_small:
                 limitation = (
-                    f"Only {total_count} grains were analyzed; at least "
-                    f"{minimum_sample_size} are required for image-level screening."
+                    f"Only {total_count} grains were analyzed; the project screening "
+                    f"threshold is {minimum_sample_size} grains (engineering threshold, "
+                    "not an official Government requirement)."
                 )
             if quality_unreliable:
                 limitation = (
@@ -152,8 +153,9 @@ def compare_with_standards(
     
     if sample_too_small:
         reasons_cannot_grade.append(
-            f"Small sample size ({total_count} grains) — at least "
-            f"{minimum_sample_size} grains are required for image-level screening."
+            f"Small sample size ({total_count} grains); project screening threshold: "
+            f"{minimum_sample_size} grains (engineering threshold, not an official "
+            "Government requirement)."
         )
 
     if quality_unreliable:

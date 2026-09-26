@@ -8,7 +8,9 @@
     "2": "organic",
     "3": "other_foreign_matter"
   },
-  "dataset_yaml": "C:\\Users\\saikiran\\Desktop\\grain\\rice-quality-ai\\models\\foreign_matter\\dataset.yaml",
-  "status": "ready_for_training",
-  "note": "Ultralytics YOLO11n fine-tuning pipeline initialized. When external dataset downloaded, run: yolo detect train data=dataset.yaml model=yolo11n.pt"
+  "dataset_yaml": "models/foreign_matter/dataset.yaml",
+  "status": "unavailable",
+  "dataset_provenance": "unknown; manifest source names only, no local images or annotations",
+  "metrics": null,
+  "note": "No local dataset images/annotations or trained checkpoint; heuristic fallback is active."
 }

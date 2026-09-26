@@ -34,9 +34,18 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
     {
       title: 'Damaged / Slightly Damaged',
       status: defects.damaged.damaged_label === 'damaged' ? 'Yes' : 'No',
+      statusLabel: `Prediction: ${defects.damaged.damaged_label === 'damaged' ? 'Yes' : 'No'}`,
       isDefect: defects.damaged.damaged_label === 'damaged',
-      confidence: defects.damaged.damaged_probability ? `${Math.round(defects.damaged.damaged_probability * 100)}%` : undefined,
+      confidence: (defects.damaged.confidence ?? defects.damaged.damaged_probability) != null
+        ? `${Math.round((defects.damaged.confidence ?? defects.damaged.damaged_probability) * 100)}%`
+        : undefined,
+      confidenceLabel: 'Confidence:',
+      modelStatus: defects.damaged.model_status === 'experimental'
+        ? 'Status: Experimental / uncalibrated'
+        : undefined,
+      confidenceBasis: defects.damaged.confidence_basis,
       method: defects.damaged.method,
+      limitation: defects.damaged.limitation,
     },
     {
       title: 'Discoloured',
@@ -92,6 +101,8 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
         ? `${Math.round((defects.sprouted_weevilled.confidence ?? defects.sprouted_weevilled.probability) * 100)}%`
         : undefined,
       confidenceLabel: 'Confidence:',
+      modelStatus: defects.sprouted_weevilled.model_status,
+      confidenceBasis: defects.sprouted_weevilled.confidence_basis,
       method: defects.sprouted_weevilled.method,
       limitation: defects.sprouted_weevilled.limitation,
     },
@@ -174,6 +185,12 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
               <div>
                 <span className="font-medium text-text-primary block">{row.title}</span>
                 <span className="text-[10px] text-text-muted">{row.method}</span>
+                {row.modelStatus && (
+                  <span className="text-[10px] text-warning block mt-0.5">{row.modelStatus}</span>
+                )}
+                {row.confidenceBasis && (
+                  <span className="text-[10px] text-text-muted block mt-0.5">{row.confidenceBasis}</span>
+                )}
                 {row.limitation && (
                   <span className="text-[10px] text-warning block mt-0.5">{row.limitation}</span>
                 )}

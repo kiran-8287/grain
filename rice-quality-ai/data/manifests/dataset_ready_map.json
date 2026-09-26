@@ -1,0 +1,45 @@
+{
+  "dataset_ready_map": {
+    "rice_gate": {
+      "status": "not_ready",
+      "candidate_sources": [
+        "murat_koklu_rice_image_dataset_v1",
+        "grainset_rice_v3"
+      ],
+      "reason": "Image-level rice/no-rice training requires a reviewed binary label set with source_group metadata. The raw extracted folders are present, but no manifest has been created yet."
+    },
+    "segmentation": {
+      "status": "not_ready",
+      "candidate_sources": [
+        "graindet_rice_v2",
+        "grainset_rice_v3"
+      ],
+      "reason": "Bulk-scene segmentation requires a verified COCO-style or YOLO-style annotation set. No local instance labels have been reviewed yet."
+    },
+    "foreign_matter": {
+      "status": "not_ready",
+      "candidate_sources": [
+        "roboflow_rice_grain_defects_v1",
+        "roboflow_rice_quality_parameters_v1"
+      ],
+      "reason": "Object labels are present in Roboflow export format, but class mapping and source-group leakage must be reviewed before training."
+    },
+    "chalky": {
+      "status": "not_ready",
+      "candidate_sources": [
+        "roboflow_rice_grain_defects_v1",
+        "roboflow_rice_quality_parameters_v1",
+        "murat_koklu_rice_image_dataset_v1"
+      ],
+      "reason": "No reviewed chalky manifest exists yet. The extracted folders are not approved training data until labels and split groups are audited."
+    },
+    "sprouted_weevilled": {
+      "status": "not_ready",
+      "candidate_sources": [
+        "graindet_rice_v2",
+        "grainset_rice_v3"
+      ],
+      "reason": "The real class taxonomy and source-group splits must be inspected before a sprouted/weevilled model can be trained."
+    }
+  }
+}

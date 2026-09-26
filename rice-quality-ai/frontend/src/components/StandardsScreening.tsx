@@ -15,14 +15,14 @@ export const StandardsScreening: React.FC<StandardsScreeningProps> = ({ standard
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-success-bg text-success border border-success/20">
             <CheckCircle2 className="w-3 h-3" />
-            Within Limit
+            Image estimate within reference
           </span>
         );
       case 'EXCEEDS REFERENCE LIMIT':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-error-bg text-error border border-error/20">
             <XCircle className="w-3 h-3" />
-            Exceeds Limit
+            Image estimate above reference
           </span>
         );
       case 'NOT DETERMINABLE':

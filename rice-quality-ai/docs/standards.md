@@ -11,9 +11,9 @@ The configured limits are retained as **historical/reference values** from a pre
 | **Foreign Matter** | 0.5% max | 0.5% max | Weight percentage | Bounding box area / object count |
 | **Damaged / Slightly Damaged** | 3.0% max | 3.0% max | Visual inspection by weight | VGG-19 CNN on grain crops |
 | **Discoloured** | 3.0% max | 3.0% max | Visual inspection by weight | Adaptive CIELAB $\Delta E$ |
-| **Chalky** | 5.0% max | 5.0% max | Visual inspection by weight | Logistic Regression on LAB/GLCM features |
+| **Chalky** | 5.0% max | 5.0% max | Visual inspection by weight | Classifier unavailable; observed result Undetermined |
 | **Red Grains** | 3.0% max | 3.0% max | Visual inspection by weight | Red cuticle coverage fraction $\ge 25\%$ |
-| **Admixture of Lower Class** | 6.0% max | Not Applicable | Manual varietal separation | Robust Mahalanobis outlier detection |
+| **Admixture of Lower Class** | 6.0% max | Not Applicable | Manual varietal separation | Unsupported; geometry outliers are diagnostic only and not admixture labels |
 | **Dehusked Grains** | 13.0% max | 13.0% max | Chemical/alkaline staining test | Visual bran coverage proxy |
 
 ---

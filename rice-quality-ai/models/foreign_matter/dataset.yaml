@@ -1,4 +1,4 @@
-path: C:\Users\saikiran\Desktop\grain\rice-quality-ai\data\processed\foreign_matter
+path: data/processed/foreign_matter
 train: images/train
 val: images/val
 names:

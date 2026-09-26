@@ -174,6 +174,11 @@ export const App: React.FC = () => {
               reported separately — it is never treated as rice. Fake measurements are
               strictly prevented.
             </p>
+            {riceGate?.model_data_provenance === 'synthetic_hand_sampled_feature_vectors_only' && (
+              <p className="text-xs text-warning max-w-md mx-auto">
+                Gate score status: Experimental / uncalibrated. The loaded feature model was trained on synthetic feature vectors, not a real labeled image corpus.
+              </p>
+            )}
             {riceGate && (
               <p className="text-[10px] font-mono text-text-muted break-words">{riceGate.debug}</p>
             )}
@@ -257,7 +262,7 @@ export const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="border-t border-border bg-surface-page py-4 text-center text-xs text-text-muted">
-        Rice Quality AI &bull; Kharif Marketing Season 2026-27 Standards Screening &bull; Multi-Label Defect Model
+        Grain Quality Analyzer &bull; Image-based screening &bull; Historical/reference standards &bull; Experimental models identified
       </footer>
     </div>
   );

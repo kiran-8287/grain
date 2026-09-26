@@ -8,9 +8,9 @@ This document is prepared for explaining the engineering design choices, mathema
 **Answer**:
 Machine learning should only be used where linear/deterministic mathematical formulations fail.
 - **Pure Geometry (Length, Breadth, L/B Ratio, Area)**: These are deterministic spatial quantities best computed via Moments, fitted ellipses, and Minimum Area Bounding Rectangles. Applying ML here introduces unnecessary latency, opacity, and approximation error.
-- **Broken Grain**: The definition ($< 0.75 \times \text{whole kernel}$) is purely mathematical. The challenge is estimating the whole-kernel reference when broken grains are present. An iterative median estimator converges deterministically without needing training data.
+- **Broken Grain**: The current 0.75 length comparison is an image-based estimator of a reference concept, not an official weight-based test. If a whole-kernel reference cannot be established from the sample, the system returns `Undetermined`.
 - **Discolouration**: CIELAB $\Delta E$ is the international standard for perceptual color difference. Comparing against the image's median grain profile adapts to varying illumination automatically.
-- **Damaged & Sprouted Grains**: Fungal decay, insect boring holes, and sprouts exhibit complex spatial textures and irregular morphology where deep CNN feature hierarchies (VGG-19, ResNet-18) significantly outperform heuristic rules.
+- **Damaged & Sprouted Grains**: These may benefit from CNNs when supported by real labeled data. The checked-in VGG-19 and ResNet-18 checkpoints were trained on synthetic demonstrations, so their outputs are experimental and do not establish real-rice performance.
 - **Chalkiness**: Brightness alone is not a chalky signal. The grain-level feature extractor computes LAB statistics and GLCM pairs only within the instance mask. The checked-in model used synthetic features, so inference abstains until a real labeled grain corpus is available.
 
 ---

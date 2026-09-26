@@ -1,11 +1,4 @@
-"""
-Damaged / Slightly Damaged Grain Classification Training Script.
-
-Uses VGG-19 transfer learning with ImageNet backbone.
-Crops are padded to square (224x224) preserving aspect ratio (NOT stretched).
-Evaluates with accuracy, precision, recall, F1, and confusion matrix.
-Saves model weights, class mapping, and training metadata to models/damaged/.
-"""
+"""Legacy synthetic VGG-19 demo; real-data training is not implemented."""
 
 import json
 import logging
@@ -32,8 +25,10 @@ logger = logging.getLogger(__name__)
 
 class SyntheticGrainCropDataset(Dataset):
     """
-    Dataset of grain crops with aspect-preserving pad_to_square.
-    Generates realistic normal vs damaged rice crops for training/evaluating the model head.
+    Synthetic illustrations retained only to document the legacy demo source.
+
+    These crops are not real rice data and must not be used to evaluate or
+    publish model performance.
     """
     def __init__(self, n_samples: int = 120, is_train: bool = True):
         self.samples = []
@@ -109,95 +104,17 @@ def build_vgg19_classifier(num_classes: int = 2):
 
 
 def train_damaged_model(epochs: int = 3):
-    """Train and evaluate VGG-19 model for damaged grains."""
-    out_dir = PROJECT_ROOT / "models" / "damaged"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Training VGG-19 Damaged Grain Model on device: {device}")
-
-    # Build datasets
-    train_dataset = SyntheticGrainCropDataset(n_samples=80, is_train=True)
-    test_dataset = SyntheticGrainCropDataset(n_samples=30, is_train=False)
-
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
-
-    model = build_vgg19_classifier(num_classes=2).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.classifier[6].parameters(), lr=1e-3)
-
-    # Train classification head
-    model.train()
-    for epoch in range(epochs):
-        running_loss = 0.0
-        for tensors, labels in train_loader:
-            tensors, labels = tensors.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(tensors)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item() * tensors.size(0)
-        epoch_loss = running_loss / len(train_dataset)
-        logger.info(f"Epoch {epoch+1}/{epochs} - Loss: {epoch_loss:.4f}")
-
-    # Evaluate
-    model.eval()
-    all_preds = []
-    all_targets = []
-    with torch.no_grad():
-        for tensors, labels in test_loader:
-            tensors = tensors.to(device)
-            outputs = model(tensors)
-            preds = torch.argmax(outputs, dim=1).cpu().numpy()
-            all_preds.extend(preds)
-            all_targets.extend(labels.numpy())
-
-    acc = float(accuracy_score(all_targets, all_preds))
-    prec = float(precision_score(all_targets, all_preds, zero_division=0))
-    rec = float(recall_score(all_targets, all_preds, zero_division=0))
-    f1 = float(f1_score(all_targets, all_preds, zero_division=0))
-    cm = confusion_matrix(all_targets, all_preds).tolist()
-
-    logger.info(f"VGG-19 Evaluation Results (Test Set):")
-    logger.info(f"  Accuracy:  {acc:.4f}")
-    logger.info(f"  Precision: {prec:.4f}")
-    logger.info(f"  Recall:    {rec:.4f}")
-    logger.info(f"  F1 Score:  {f1:.4f}")
-    logger.info(f"  Confusion Matrix: {cm}")
-
-    # Save model and class mapping
-    model_path = out_dir / "model.pth"
-    torch.save(model, model_path)
-
-    class_mapping = {
-        "0": "normal",
-        "1": "damaged"
-    }
-    with open(out_dir / "class_mapping.json", "w") as f:
-        json.dump(class_mapping, f, indent=2)
-
-    metadata = {
-        "model_name": "damaged_vgg19",
-        "version": "1.0.0",
-        "backbone": "vgg19",
-        "input_resolution": "224x224 (aspect-preserving pad_to_square)",
-        "classes": class_mapping,
-        "metrics": {
-            "accuracy": round(acc, 4),
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1_score": round(f1, 4),
-            "confusion_matrix": cm,
-        },
-        "status": "trained",
-    }
-    with open(out_dir / "metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    logger.info(f"Saved VGG-19 damaged model artifacts to {out_dir}")
-    return metadata
+    """Refuse to replace the experimental checkpoint with synthetic-demo results."""
+    manifest_path = PROJECT_ROOT / "data" / "processed" / "damaged" / "manifest.csv"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Missing {manifest_path}. Synthetic crop training is disabled; "
+            "provide real labeled rice-grain data before retraining."
+        )
+    raise NotImplementedError(
+        "The audited VGG-19 demo trainer does not yet implement real-manifest "
+        "training. Do not publish or overwrite artifacts until that trainer is reviewed."
+    )
 
 
 if __name__ == "__main__":

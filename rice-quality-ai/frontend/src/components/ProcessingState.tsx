@@ -12,7 +12,7 @@ const STAGES = [
   'Measuring per-grain geometry (Length, Breadth, L/B)',
   'Classifying multi-label grain defects',
   'Detecting full-image foreign matter objects',
-  'Computing sample-level statistics & admixture',
+  'Computing image fractions & geometry diagnostics',
   'Comparing with historical/reference limits',
   'Preparing annotated visualization & export report',
 ];

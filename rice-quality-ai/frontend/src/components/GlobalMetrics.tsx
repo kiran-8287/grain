@@ -40,7 +40,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, 
               </p>
             ) : (
               <p className="mt-0.5">
-                Observed sample size ({summary.total_rice_grains} grains) is below statistical threshold (30 grains).
+                Observed sample size ({summary.total_rice_grains} grains) is below the project screening threshold (30 grains; engineering threshold, not an official requirement).
                 Individual classifications are provided, but sample percentages reflect observed sample fraction, not whole batch quality.
               </p>
             )}
@@ -69,7 +69,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, 
             <span className="text-2xl font-extrabold text-warning">{formatPercent(summary.broken_percent)}</span>
             <span className="text-xs text-text-muted font-mono">({summary.broken_count})</span>
           </div>
-          <span className="text-[10px] text-text-muted mt-1 block">Image count estimate; not weight-based</span>
+          <span className="text-[10px] text-text-muted mt-1 block">Geometry estimate; not weight-based</span>
         </div>
 
         {/* Damaged % */}
@@ -79,7 +79,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, 
             <span className="text-2xl font-extrabold text-text-primary">{formatPercent(summary.damaged_percent)}</span>
             <span className="text-xs text-text-muted font-mono">({summary.damaged_count})</span>
           </div>
-          <span className="text-[10px] text-text-muted mt-1 block">Image count estimate; not weight-based</span>
+          <span className="text-[10px] text-text-muted mt-1 block">Experimental model count; not weight-based</span>
         </div>
 
         {/* Discoloured % */}
@@ -160,7 +160,10 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, 
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="text-2xl font-extrabold text-text-primary">{formatPercent(summary.admixture_percentage)}</span>
           </div>
-          <span className="text-[10px] text-text-muted mt-1 block">Sample-level (Mahalanobis)</span>
+          <span className="text-[10px] text-text-muted mt-1 block">Unsupported: outlier is not lower-class evidence</span>
+          <span className="text-[10px] text-text-muted block">
+            Geometry outliers: {summary.geometry_outlier_count ?? 'N/A'} (diagnostic only)
+          </span>
         </div>
 
         {/* Average Length */}

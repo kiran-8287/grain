@@ -1,12 +1,14 @@
 {
-  "dataset_name": "rice_grain_instance_segmentation_coco",
+  "dataset_name": "rice_grain_instance_segmentation_external_candidate",
+  "dataset_available_locally": false,
+  "provenance_status": "external_candidate_not_downloaded",
   "annotation_format": "COCO Instance Segmentation",
   "num_classes": 2,
   "classes": {
     "0": "background",
     "1": "rice_grain"
   },
-  "source": "Rice Instance Segmentation Public Dataset",
+  "source": "GrainSet Rice single-kernel masks are a candidate; bulk-scene applicability not established",
   "splits": {
     "train": "data/processed/segmentation/train.json",
     "val": "data/processed/segmentation/val.json"

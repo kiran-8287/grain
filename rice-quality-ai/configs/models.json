@@ -4,21 +4,15 @@
   "rice_gate": {
     "model_type": "logistic_regression_rice_gate",
     "version": "1.0.0",
-    "status": "trained",
+    "status": "experimental",
     "weights_path": "models/rice_gate/model.joblib",
     "feature_schema_path": "models/rice_gate/feature_schema.json",
     "class_mapping_path": "models/rice_gate/class_mapping.json",
     "metadata_path": "models/rice_gate/metadata.json",
     "training_date": "2026-09-26",
-    "dataset": "rice_vs_hard_negative_feature_set",
-    "validation_metrics": {
-      "accuracy": 0.98,
-      "precision": 0.99,
-      "recall": 0.97,
-      "f1_score": 0.98,
-      "false_positive_rate_non_rice": 0.02
-    },
-    "notes": "Primary binary rice/no-rice gate trained on rice and hard-negative stone/pebble/seed samples. Heuristic gate remains as fallback and secondary validation."
+    "dataset": "synthetic_hand_sampled_feature_vectors_only",
+    "validation_metrics": null,
+    "notes": "Existing gate behavior is retained for regression compatibility. Its Logistic Regression artifact was trained on generated feature vectors, not a real labeled image corpus; reported confidence is experimental and uncalibrated."
   },
 
   "segmentation": {
@@ -29,9 +23,9 @@
     "config_path": "models/segmentation/config.json",
     "class_mapping_path": "models/segmentation/class_mapping.json",
     "training_date": null,
-    "dataset": "rice_instance_segmentation_public",
+    "dataset": "grainset_rice_v3_external_candidate_not_downloaded",
     "validation_metrics": null,
-    "notes": "Pipeline configured. Classical CV watershed + contour connected components fallback active."
+    "notes": "No Mask R-CNN checkpoint/local instance annotations. GrainSet single-kernel masks may need adaptation for bulk scenes; classical CV fallback remains active."
   },
 
   "chalky": {
@@ -51,32 +45,27 @@
   "damaged": {
     "model_type": "vgg19_transfer_learning",
     "version": "1.0.0",
-    "status": "trained",
+    "status": "experimental",
     "weights_path": "models/damaged/model.pth",
     "config_path": "models/damaged/config.json",
     "class_mapping_path": "models/damaged/class_mapping.json",
     "training_date": "2026-09-25",
-    "dataset": "rice_grain_crop_damage_vgg19",
-    "validation_metrics": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1_score": 1.0
-    },
-    "notes": "VGG-19 transfer learning with 224x224 aspect-preserving pad_to_square."
+    "dataset": "synthetic_generated_grain_crops_only",
+    "validation_metrics": null,
+    "notes": "Experimental only: checkpoint trained on generated illustrations, not labeled rice-grain images; classes do not distinguish slightly damaged grains."
   },
 
   "foreign_matter": {
     "model_type": "yolo11n",
     "version": "1.0.0",
-    "status": "ready_for_training",
+    "status": "unavailable",
     "weights_path": "models/foreign_matter/yolo11n_foreign.pt",
     "config_path": "models/foreign_matter/dataset.yaml",
     "class_mapping_path": "models/foreign_matter/class_mapping.json",
     "training_date": null,
     "dataset": "rice_foreign_matter_combined",
     "validation_metrics": null,
-    "notes": "YOLO11n pipeline configured for stone, inorganic, organic, and other_foreign_matter. Classical CV fallback active."
+    "notes": "YOLO11n taxonomy configured, but no local image annotations or checkpoint are available; source class coverage is unverified and classical CV fallback is active."
   },
 
   "sprouted_weevilled": {

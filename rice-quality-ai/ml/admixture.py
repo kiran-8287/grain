@@ -1,5 +1,5 @@
 """
-Admixture of Lower Class detection module.
+Geometry outlier diagnostic for rice grain samples.
 
 This is a SAMPLE-LEVEL parameter — NOT classified per individual grain.
 
@@ -8,7 +8,9 @@ Uses statistical outlier detection on grain geometry:
 - Robust Mahalanobis distance
 - Excludes broken grains and uncertain segmentation first
 
-Clearly labelled as "Image-based statistical proxy".
+This is NOT a lower-class grain classifier. A geometric outlier does not
+establish variety/class identity, so the official/project admixture output
+remains unsupported until labeled definitions and data are available.
 """
 
 import logging
@@ -27,7 +29,7 @@ def detect_admixture(
     segmentation_qualities: List[str],
 ) -> Dict:
     """
-    Detect admixture of lower class grains in the sample.
+    Compute a diagnostic geometry-outlier score without asserting admixture.
     
     Sample-level parameter. Runs only when there are enough valid grains.
     First excludes broken grains and uncertain segmentation.
@@ -37,8 +39,7 @@ def detect_admixture(
         broken_labels: List of broken status per grain ('broken', 'whole', 'undetermined')
         segmentation_qualities: List of segmentation quality per grain
         
-    Returns:
-        Admixture analysis result
+    Returns an unsupported admixture status and a separate outlier diagnostic.
     """
     min_grains = get_threshold("admixture", "min_grains_for_analysis", 10)
     mahalanobis_thresh = get_threshold("admixture", "mahalanobis_threshold", 3.0)
@@ -53,16 +54,19 @@ def detect_admixture(
     
     if n_valid < min_grains:
         return {
-            "admixture_status": "not reliably estimable",
-            "admixture_count": 0,
-            "admixture_percentage": 0.0,
-            "admixture_confidence": 0.0,
+            "admixture_status": "unsupported",
+            "admixture_count": None,
+            "admixture_percentage": None,
+            "admixture_confidence": None,
+            "geometry_outlier_status": "insufficient_data",
+            "geometry_outlier_count": None,
+            "geometry_outlier_fraction": None,
             "valid_grains_used": n_valid,
             "min_required": min_grains,
-            "method": "mahalanobis_distance",
+            "method": "geometry_outlier_diagnostic",
             "_source": "engineering_heuristic",
-            "reason": f"Too few valid whole grains ({n_valid}) for reliable admixture analysis. "
-                      f"Minimum required: {min_grains}.",
+            "reason": "Geometric outliers do not identify lower-class grains; labeled class evidence is unavailable.",
+            "diagnostic_reason": f"Too few valid whole grains ({n_valid}) for the geometry diagnostic; configured project minimum is {min_grains}.",
             "scope": "sample_level",
         }
     
@@ -82,12 +86,16 @@ def detect_admixture(
     
     if features.shape[0] < 3 or features.shape[1] < 2:
         return {
-            "admixture_status": "not reliably estimable",
-            "admixture_count": 0,
-            "admixture_percentage": 0.0,
-            "admixture_confidence": 0.0,
-            "method": "mahalanobis_distance",
-            "reason": "Insufficient feature dimensions",
+            "admixture_status": "unsupported",
+            "admixture_count": None,
+            "admixture_percentage": None,
+            "admixture_confidence": None,
+            "geometry_outlier_status": "insufficient_data",
+            "geometry_outlier_count": None,
+            "geometry_outlier_fraction": None,
+            "method": "geometry_outlier_diagnostic",
+            "reason": "Geometric outliers do not identify lower-class grains; labeled class evidence is unavailable.",
+            "diagnostic_reason": "Insufficient feature dimensions for geometry outlier diagnostic.",
             "scope": "sample_level",
         }
     
@@ -109,7 +117,7 @@ def detect_admixture(
         
         distances = np.array(distances)
         
-        # Outliers = potential admixture
+        # Outliers are geometry diagnostics, not identified lower-class grains.
         outlier_mask = distances > mahalanobis_thresh
         outlier_count = int(np.sum(outlier_mask))
         outlier_percentage = (outlier_count / n_valid * 100) if n_valid > 0 else 0.0
@@ -118,27 +126,36 @@ def detect_admixture(
         confidence = min(1.0, n_valid / 50.0) * min(1.0, np.mean(distances[outlier_mask]) / mahalanobis_thresh if outlier_count > 0 else 0.5)
         
         return {
-            "admixture_status": "detected" if outlier_count > 0 else "not_detected",
-            "admixture_count": outlier_count,
-            "admixture_percentage": round(outlier_percentage, 2),
-            "admixture_confidence": round(float(confidence), 4),
+            "admixture_status": "unsupported",
+            "admixture_count": None,
+            "admixture_percentage": None,
+            "admixture_confidence": None,
+            "geometry_outlier_status": "diagnostic_only",
+            "geometry_outlier_count": outlier_count,
+            "geometry_outlier_fraction": round(outlier_percentage / 100.0, 4),
+            "geometry_outlier_indices": [valid_indices[i] for i in range(len(outlier_mask)) if outlier_mask[i]],
+            "geometry_outlier_diagnostic_score": round(float(confidence), 4),
             "valid_grains_used": n_valid,
             "total_grains": len(grain_geometries),
-            "outlier_grain_indices": [valid_indices[i] for i in range(len(outlier_mask)) if outlier_mask[i]],
             "mahalanobis_threshold": mahalanobis_thresh,
-            "method": "mahalanobis_distance",
+            "method": "geometry_outlier_diagnostic",
             "_source": "engineering_heuristic",
-            "basis": "Image-based statistical proxy",
+            "basis": "Geometric outlier diagnostic only; not lower-class admixture evidence",
+            "reason": "No supported mapping from geometric outlier to lower-class grain is available.",
             "scope": "sample_level",
         }
         
     except np.linalg.LinAlgError:
         return {
-            "admixture_status": "not reliably estimable",
-            "admixture_count": 0,
-            "admixture_percentage": 0.0,
-            "admixture_confidence": 0.0,
-            "method": "mahalanobis_distance",
-            "reason": "Covariance matrix is singular — insufficient variation in sample",
+            "admixture_status": "unsupported",
+            "admixture_count": None,
+            "admixture_percentage": None,
+            "admixture_confidence": None,
+            "geometry_outlier_status": "insufficient_data",
+            "geometry_outlier_count": None,
+            "geometry_outlier_fraction": None,
+            "method": "geometry_outlier_diagnostic",
+            "reason": "Geometric outliers do not identify lower-class grains; labeled class evidence is unavailable.",
+            "diagnostic_reason": "Covariance matrix is singular; geometry diagnostic is unavailable.",
             "scope": "sample_level",
         }

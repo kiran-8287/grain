@@ -1,15 +1,4 @@
-"""
-Foreign Matter Detection Model Setup and Training Pipeline.
-
-Integrates YOLO11n fine-tuning for non-rice foreign matter objects:
-Classes:
-0: stone
-1: inorganic
-2: organic
-3: other_foreign_matter
-
-Records dataset manifests, class mapping, mAP50, and training metadata.
-"""
+"""Set up a proposed YOLO taxonomy; this does not train a detector."""
 
 import json
 import logging
@@ -44,8 +33,8 @@ def setup_foreign_matter_pipeline():
         json.dump(CLASS_MAPPING, f, indent=2)
 
     # Dataset YAML config for YOLO training
-    dataset_yaml_content = f"""
-path: {PROJECT_ROOT / 'data' / 'processed' / 'foreign_matter'}
+    dataset_yaml_content = """
+path: data/processed/foreign_matter
 train: images/train
 val: images/val
 names:
@@ -59,17 +48,18 @@ names:
         f.write(dataset_yaml_content.strip())
 
     manifest = {
-        "dataset_name": "rice_foreign_matter_combined",
-        "sources": [
+        "dataset_name": "foreign_matter_external_candidates_not_downloaded",
+        "sources": [],
+        "candidate_sources_unverified": [
             "Rice-Quality 3 Foreign Matter",
-            "Agricultural Non-Grain Contaminants"
+            "Agricultural Non-Grain Contaminants",
         ],
+        "dataset_available_locally": False,
+        "provenance_status": "unknown_until_source_contents_license_and_annotations_are_inspected",
         "taxonomy": CLASS_MAPPING,
-        "splits": {
-            "train": 0.8,
-            "val": 0.2
-        },
-        "target_model": "yolo11n.pt"
+        "planned_splits": {"train": 0.8, "validation": 0.1, "test": 0.1},
+        "target_model": "yolo11n.pt",
+        "notes": "Proposed taxonomy only; no source image/annotation counts or classes are claimed.",
     }
     with open(manifest_dir / "foreign_matter_manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
@@ -80,8 +70,10 @@ names:
         "architecture": "YOLO11n",
         "classes": CLASS_MAPPING,
         "dataset_yaml": str(yaml_path),
-        "status": "ready_for_training",
-        "note": "Ultralytics YOLO11n fine-tuning pipeline initialized. When external dataset downloaded, run: yolo detect train data=dataset.yaml model=yolo11n.pt",
+        "status": "unavailable",
+        "dataset_available_locally": False,
+        "validation_metrics": None,
+        "note": "No local image annotations or trained checkpoint. Heuristic fallback remains active; candidate datasets require content/license and group-split audit.",
     }
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)

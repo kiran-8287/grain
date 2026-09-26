@@ -24,6 +24,10 @@ export interface DefectItem {
   confidence_basis?: string;
   predicted_class_index?: number;
   class_mapping?: Record<string, string>;
+  model_status?: string;
+  model_data_provenance?: string;
+  model_confidence_calibrated?: boolean;
+  training_dataset?: string;
   method: string;
   limitation?: string;
   reason?: string;
@@ -92,6 +96,9 @@ export interface SampleSummary {
   rejected_grains: number;
   foreign_matter_count: number;
   admixture_percentage: number | null;
+  admixture_status?: string;
+  geometry_outlier_count?: number | null;
+  geometry_outlier_fraction?: number | null;
   broken_count: number;
   broken_percent: number | null;
   broken_analyzed_count?: number;
@@ -204,6 +211,8 @@ export interface RiceGate {
   class_mapping_source?: Record<string, string>;
   method: string;
   model_status?: string;
+  model_data_provenance?: string;
+  model_confidence_calibrated?: boolean;
   limitation?: string;
   debug: string;
   warnings: string[];
@@ -215,6 +224,35 @@ export interface ImageQuality {
   median_grain_pixels: number;
   mean_segmentation_confidence: number;
   reasons: string[];
+  quality_score?: number;
+  thresholds_used?: {
+    blur_laplacian_variance: { good_min: number; fair_min: number; poor_min: number };
+    median_grain_area_pixels: { good_min: number; fair_min: number; poor_min: number };
+    uncertain_grain_fraction_warning_above: number;
+    segmentation_confidence_floor: number;
+    unreliable_hard_failures: {
+      blur_below: number;
+      median_grain_area_below_pixels: number;
+      mean_segmentation_confidence_below: number;
+      uncertain_fraction_at_least: number;
+      low_quality_segmentation_fraction_at_least: number;
+      clipped_pixel_fraction_at_least: number;
+      illumination_uniformity_below: number;
+    };
+    quality_score_tiers: {
+      good_min: number;
+      fair_min: number;
+      poor_below: number;
+      unreliable_uses_explicit_hard_failures: boolean;
+    };
+    low_quality_segmentation_count: number;
+    low_quality_segmentation_fraction: number;
+    mean_segmentation_confidence_used_for_tier: boolean;
+    segmentation_quality_used_for_tier: boolean;
+    megapixel_rejection_threshold: number | null;
+    provenance: string;
+  };
+  unreliable_reasons?: string[];
 }
 
 export interface AnalysisResult {
@@ -259,9 +297,12 @@ export interface AnalysisResult {
   };
   admixture?: {
     admixture_status: string;
-    admixture_count: number;
-    admixture_percentage: number;
-    admixture_confidence: number;
+    admixture_count: number | null;
+    admixture_percentage: number | null;
+    admixture_confidence: number | null;
+    geometry_outlier_status?: string;
+    geometry_outlier_count?: number | null;
+    geometry_outlier_fraction?: number | null;
     method: string;
   };
   summary: SampleSummary;

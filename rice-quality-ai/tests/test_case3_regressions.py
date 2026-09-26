@@ -12,8 +12,10 @@ import numpy as np
 import pytest
 
 from ml.classifiers import _choose_sprouted_class
+from ml.admixture import detect_admixture
 from ml.texture import extract_chalky_features, heuristic_chalky_classification
 from ml.pipeline import RiceQualityPipeline
+from ml.quality import assess_image_quality
 from ml.standards import compare_with_standards
 from training.train_chalky import _load_chalky_manifest
 from training.train_sprouted import ManifestSproutedDataset
@@ -81,6 +83,26 @@ def test_single_clean_rice_grain_has_no_lot_compliance_verdict():
     assert chalky_standard["observed_fraction"] is None
 
 
+def test_two_clean_rice_grains_remain_individual_and_noncompliant_sample_is_indeterminate():
+    image = np.zeros((300, 360, 3), dtype=np.uint8)
+    cv2.ellipse(image, (90, 150), (48, 17), 20, 0, 360, (235, 235, 235), -1)
+    cv2.ellipse(image, (270, 150), (48, 17), -20, 0, 360, (232, 230, 225), -1)
+    encoded, buffer = cv2.imencode(".png", image)
+    assert encoded
+
+    result = RiceQualityPipeline().analyze(buffer.tobytes())
+
+    assert result["rice_detected"] is True
+    assert result["sample"]["analysed"] == 2
+    assert len(result["grains"]) == 2
+    assert all(g["defects"]["chalky"]["chalky_label"] == "undetermined" for g in result["grains"])
+    assert all(g["defects"]["damaged"]["model_status"] == "experimental" for g in result["grains"])
+    assert all(g["defects"]["sprouted_weevilled"]["model_status"] == "experimental / uncalibrated" for g in result["grains"])
+    assert result["standards"]["official_grade"]["status"] == (
+        "Not determinable from this sample"
+    )
+
+
 def test_saved_case3_image_reports_model_confidence_and_not_compliance():
     case3_image = PROJECT_ROOT / "data" / "runs" / "025_26_09_26" / "input_image.png"
     result = RiceQualityPipeline().analyze(str(case3_image))
@@ -90,6 +112,8 @@ def test_saved_case3_image_reports_model_confidence_and_not_compliance():
     grain = result["grains"][0]
     assert grain["defects"]["chalky"]["chalky_label"] == "undetermined"
     assert grain["defects"]["chalky"]["chalky_probability"] is None
+    assert grain["defects"]["damaged"]["model_status"] == "experimental"
+    assert "not calibrated" in grain["defects"]["damaged"]["confidence_basis"]
     sprouted = grain["defects"]["sprouted_weevilled"]
     assert sprouted["sprouted_weevilled_label"] == "normal"
     assert sprouted["confidence"] == sprouted["probability"]
@@ -125,6 +149,76 @@ def test_unreliable_image_suppresses_official_compliance_statuses():
     assert result["screening"]["broken"]["detected_count"] == 12
     assert result["screening"]["broken"]["analyzed_count"] == 40
     assert result["screening"]["broken"]["observed_fraction"] == 0.3
+    assert result["screening"]["dehusked"]["status"] == "NOT ASSESSABLE"
+
+
+def test_image_quality_unreliable_is_reachable_by_explicit_hard_failures():
+    quality = assess_image_quality(
+        np.zeros((64, 64, 3), dtype=np.uint8),
+        grain_areas=[10],
+        grain_confidences=[0.1],
+        uncertain_count=1,
+        total_count=1,
+        segmentation_qualities=["unreliable"],
+    )
+
+    assert quality["quality_level"] == "UNRELIABLE"
+    assert quality["quality_score"] >= 0.35
+    assert quality["thresholds_used"]["mean_segmentation_confidence_used_for_tier"] is True
+    assert quality["unreliable_reasons"]
+
+
+def test_image_quality_clipping_ignores_intentional_black_background():
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    grain_mask = np.zeros((100, 100), dtype=np.uint8)
+    cv2.ellipse(grain_mask, (50, 50), (30, 12), 20, 0, 360, 255, -1)
+    image[grain_mask > 0] = (235, 230, 220)
+
+    quality = assess_image_quality(
+        image,
+        grain_areas=[int(np.count_nonzero(grain_mask))],
+        grain_confidences=[0.95],
+        uncertain_count=0,
+        total_count=1,
+        segmentation_qualities=["good"],
+        grain_mask=grain_mask,
+    )
+
+    assert quality["clipped_dark_fraction"] == 0
+    assert quality["clipping_basis"] == "accepted grain-mask pixels"
+    assert quality["quality_level"] != "UNRELIABLE"
+
+
+def test_image_quality_metrics_are_background_invariant_inside_grain_mask():
+    grain_mask = np.zeros((120, 120), dtype=np.uint8)
+    cv2.ellipse(grain_mask, (60, 60), (32, 12), 24, 0, 360, 255, -1)
+    black_background = np.zeros((120, 120, 3), dtype=np.uint8)
+    white_background = np.full((120, 120, 3), 255, dtype=np.uint8)
+    grain_pixels = np.indices(grain_mask.shape).sum(axis=0) % 2 == 0
+    grain = np.where(grain_pixels[..., None], (224, 220, 212), (231, 226, 218)).astype(np.uint8)
+    black_background[grain_mask > 0] = grain[grain_mask > 0]
+    white_background[grain_mask > 0] = grain[grain_mask > 0]
+    arguments = {
+        "grain_areas": [int(np.count_nonzero(grain_mask))],
+        "grain_confidences": [0.95],
+        "uncertain_count": 0,
+        "total_count": 1,
+        "segmentation_qualities": ["good"],
+        "grain_mask": grain_mask,
+    }
+
+    black_quality = assess_image_quality(black_background, **arguments)
+    white_quality = assess_image_quality(white_background, **arguments)
+
+    for key in (
+        "blur_score",
+        "clipped_dark_fraction",
+        "clipped_bright_fraction",
+        "illumination_uniformity",
+        "quality_score",
+        "quality_level",
+    ):
+        assert black_quality[key] == white_quality[key]
 
 
 def test_sprouted_prediction_uses_mapping_not_assumed_index():
@@ -138,8 +232,46 @@ def test_sprouted_prediction_uses_mapping_not_assumed_index():
     assert confidence == pytest.approx(0.8)
 
 
+def test_geometry_outlier_diagnostic_is_not_reported_as_lower_class_admixture():
+    geometries = [
+        {
+            "length_pixels": 10 + index,
+            "breadth_pixels": 4 + index * 0.1,
+            "lb_ratio": 2.5,
+            "area_pixels": 40 + index,
+            "solidity": 0.9,
+        }
+        for index in range(12)
+    ]
+    result = detect_admixture(geometries, ["whole"] * 12, ["good"] * 12)
+
+    assert result["admixture_status"] == "unsupported"
+    assert result["admixture_percentage"] is None
+    assert result["geometry_outlier_status"] == "diagnostic_only"
+
+
 def test_training_refuses_to_generate_synthetic_model_metrics(tmp_path):
     with pytest.raises(FileNotFoundError, match="real labeled grain images"):
         _load_chalky_manifest(tmp_path)
     with pytest.raises(FileNotFoundError, match="real labeled grain images"):
         ManifestSproutedDataset(tmp_path)
+
+
+def test_sprouted_training_rejects_a_dataset_missing_one_supported_condition(tmp_path):
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "image_path,mask_path,label,source_group\n"
+        "normal.jpg,normal.png,normal,sample-a\n"
+        "sprout.jpg,sprout.png,sprouted,sample-b\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="both sprouted and weevilled"):
+        ManifestSproutedDataset(tmp_path)
+
+
+def test_damaged_demo_trainer_refuses_to_overwrite_synthetic_artifact():
+    from training.train_damaged import train_damaged_model
+
+    with pytest.raises(FileNotFoundError, match="Synthetic crop training is disabled"):
+        train_damaged_model()

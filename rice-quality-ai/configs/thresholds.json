@@ -15,8 +15,7 @@
     "bright_pixel_fraction_threshold": 0.3,
     "glcm_distances": [1, 3],
     "glcm_angles": [0, 0.7854, 1.5708, 2.3562],
-    "probability_threshold": 0.5,
-    "_source": "literature — LAB brightness + GLCM texture features"
+    "_source": "descriptive feature threshold only; not a chalky classification rule; requires calibration against labeled grains"
   },
 
   "red": {
@@ -94,8 +93,8 @@
       "full_credit_roughness": 0.02,
       "zero_credit_roughness": 0.08
     },
-    "_source": "engineering_heuristic — rice-presence gate (Case 1). Cue weights/ramps tuned on a labelled probe set (see tests/test_rice_gate.py).",
-    "_notes": "A detection counts as rice ONLY when its class is the model-configuration rice class (models/segmentation/class_mapping.json -> class_id 1 'rice_grain') and its class confidence >= rice_confidence_threshold. Foreign-matter classes are never treated as rice. Keep min_object_area_pixels >= segmentation.min_grain_area_pixels so the gate never passes objects the segmenter rejects. Observed scores: well-lit milled rice 0.82-1.00, dense rice pile 0.77, grey/tan/dark stones on white 0.15-0.35, round grey blobs 0.40-0.55, brown/unpolished rice 0.62 — lower rice_confidence_threshold to 0.60 if brown or unpolished samples must pass."
+    "_source": "engineering heuristic with an experimental Logistic Regression artifact trained on synthetic feature vectors; probe tests are not real-world model validation.",
+    "_notes": "Gate decisions and thresholds are unchanged for Case 1/Case 2 compatibility. A detection counts as rice only when it meets the configured rice class and confidence threshold; foreign-matter classes remain separate. Neither the synthetic feature model nor probe tests establish real-image accuracy."
   },
 
   "admixture": {
@@ -112,7 +111,11 @@
     "min_grain_pixels_fair": 100,
     "min_grain_pixels_poor": 25,
     "uncertain_grain_fraction_warning": 0.2,
-    "_source": "engineering_heuristic"
+    "unreliable_uncertain_grain_fraction": 0.5,
+    "unreliable_low_quality_segmentation_fraction": 0.5,
+    "unreliable_clipped_pixel_fraction": 0.5,
+    "unreliable_illumination_uniformity_below": 0.15,
+    "_source": "engineering_heuristic — hard-failure criteria and score thresholds require calibration against human-rated images"
   },
 
   "sample_warning": {

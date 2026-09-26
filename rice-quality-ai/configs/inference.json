@@ -10,25 +10,24 @@
     "_source": "engineering heuristic"
   },
   "chalky": {
-    "model": "logistic_regression",
-    "probability_threshold": 0.5,
-    "fallback": "heuristic_lab_brightness",
-    "_source": "literature — logistic regression on LAB/GLCM features"
+    "model": "disabled_unvalidated_synthetic_logistic_regression",
+    "fallback": "undetermined",
+    "_source": "legacy model trained on synthetic feature vectors; real labeled grain classifier unavailable"
   },
   "damaged": {
     "model": "vgg19_transfer",
     "input_size": 224,
-    "probability_threshold": 0.5,
+    "decision_rule": "argmax_two_class_logits",
     "pad_to_square": true,
-    "fallback": "heuristic_texture",
-    "_source": "literature — VGG-19 transfer learning"
+    "status": "experimental_synthetic_training",
+    "_source": "synthetic generated crop demo; score is uncalibrated and classes omit slightly damaged"
   },
   "foreign_matter": {
     "model": "yolo11n",
     "confidence_threshold": 0.4,
     "nms_threshold": 0.45,
     "classes": ["stone", "inorganic", "organic", "other_foreign_matter"],
-    "_source": "engineering heuristic — YOLO fine-tuned"
+    "_source": "YOLO checkpoint/dataset unavailable; heuristic fallback active"
   },
   "sprouted_weevilled": {
     "model": "resnet18_transfer",

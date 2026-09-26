@@ -1,10 +1,8 @@
-"""
-Rice-vs-non-rice gate training.
+"""Legacy synthetic feature demo for the rice gate; training is disabled.
 
-Trains a lightweight binary classifier that distinguishes valid rice grains from
-hard negatives such as stones, pebbles, dirt, leaves, plastic, and other debris.
-The model is intentionally small and feature-based so it can be used as a fast,
-robust gate before the full grain analysis pipeline is executed.
+The checked-in gate behavior is retained, but the available feature generator is
+not image data and cannot establish real-image performance. Replace this with a
+source-grouped, real-image feature manifest before retraining or reporting metrics.
 """
 
 import json
@@ -71,85 +69,17 @@ def generate_hard_negative_dataset(n_samples_per_class: int = 1200, random_state
 
 
 def train_rice_gate_model():
-    """Train and save the binary rice/no-rice gate model."""
-    out_dir = PROJECT_ROOT / "models" / "rice_gate"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    X, y = generate_hard_negative_dataset(n_samples_per_class=1200, random_state=42)
-
-    X_train_full, X_test, y_train_full, y_test = train_test_split(
-        X, y, test_size=0.15, random_state=42, stratify=y
+    """Refuse to overwrite the functioning gate with synthetic feature metrics."""
+    manifest_path = PROJECT_ROOT / "data" / "processed" / "rice_gate" / "manifest.csv"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Missing {manifest_path}. Real labeled object crops/features are required; "
+            "synthetic gate training is disabled."
+        )
+    raise NotImplementedError(
+        "A reviewed real-image rice gate training/evaluation pipeline is not implemented. "
+        "Existing gate inference artifacts are left untouched."
     )
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_train_full, y_train_full, test_size=0.1765, random_state=42, stratify=y_train_full
-    )
-
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
-
-    model = LogisticRegression(class_weight="balanced", random_state=42, max_iter=2000)
-    model.fit(X_train_scaled, y_train)
-
-    y_pred = model.predict(X_test_scaled)
-    y_prob = model.predict_proba(X_test_scaled)[:, 1]
-
-    metrics = {
-        "accuracy": round(float(accuracy_score(y_test, y_pred)), 4),
-        "precision": round(float(precision_score(y_test, y_pred, zero_division=0)), 4),
-        "recall": round(float(recall_score(y_test, y_pred, zero_division=0)), 4),
-        "f1_score": round(float(f1_score(y_test, y_pred, zero_division=0)), 4),
-        "false_positive_rate_non_rice": round(
-            float(np.sum((y_pred == 1) & (y_test == 0)) / max(np.sum(y_test == 0), 1)), 4
-        ),
-        "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
-    }
-
-    logger.info("Rice gate evaluation: %s", metrics)
-
-    joblib.dump(model, out_dir / "model.joblib")
-    joblib.dump(scaler, out_dir / "scaler.joblib")
-
-    class_mapping = {"0": "non_rice", "1": "rice"}
-    with open(out_dir / "class_mapping.json", "w", encoding="utf-8") as f:
-        json.dump(class_mapping, f, indent=2)
-
-    feature_schema = {
-        "features": FEATURE_NAMES,
-        "n_features": len(FEATURE_NAMES),
-        "scaling": "StandardScaler",
-        "label_order": ["non_rice", "rice"],
-    }
-    with open(out_dir / "feature_schema.json", "w", encoding="utf-8") as f:
-        json.dump(feature_schema, f, indent=2)
-
-    metadata = {
-        "model_name": "rice_gate_logistic_regression",
-        "version": "1.0.0",
-        "algorithm": "LogisticRegression(class_weight='balanced')",
-        "train_samples": len(X_train),
-        "val_samples": len(X_val),
-        "test_samples": len(X_test),
-        "features": FEATURE_NAMES,
-        "classes": class_mapping,
-        "metrics": metrics,
-        "status": "trained",
-        "hard_negatives": [
-            "stone",
-            "pebble",
-            "dirt",
-            "sand",
-            "leaf",
-            "plastic",
-            "other_seed",
-        ],
-    }
-    with open(out_dir / "metadata.json", "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
-
-    logger.info("Saved rice gate artifacts to %s", out_dir)
-    return metadata
 
 
 if __name__ == "__main__":
