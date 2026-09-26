@@ -191,6 +191,103 @@ def extract_foreground_mask(
     return binary, is_dark_bg, meta
 
 
+def _segment_large_image_fast(image_rgb: np.ndarray, binary: np.ndarray, warnings: List[str]) -> SegmentationResult:
+    """Faster segmentation mode for dense large images; avoids the expensive watershed path while keeping output counts stable."""
+    h, w = image_rgb.shape[:2]
+    min_area = get_threshold("segmentation", "min_grain_area_pixels", 50)
+    merge_area_ratio = get_threshold("segmentation", "merge_detection_area_ratio", 2.5)
+    merge_aspect_ratio = get_threshold("segmentation", "merge_detection_aspect_ratio", 4.0)
+
+    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_open, iterations=1)
+    closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed, connectivity=8)
+    grains = []
+    uncertain_count = 0
+    rejected_count = 0
+    estimated_merged = 0
+    grain_id = 0
+    areas = []
+
+    for label in range(1, num_labels):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area >= min_area:
+            areas.append(area)
+
+    median_area = float(np.median(areas)) if areas else 0.0
+
+    for label in range(1, num_labels):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area < min_area:
+            rejected_count += 1
+            continue
+
+        x, y, bw, bh, _ = stats[label]
+        if bw <= 0 or bh <= 0:
+            rejected_count += 1
+            continue
+
+        component = (labels == label).astype(np.uint8)
+        contours, _ = cv2.findContours(component, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if not contours:
+            rejected_count += 1
+            continue
+
+        contour = max(contours, key=cv2.contourArea)
+        M = cv2.moments(contour)
+        if M["m00"] == 0:
+            rejected_count += 1
+            continue
+
+        area_ratio = area / median_area if median_area > 0 else 1.0
+        aspect = max(bw, bh) / (min(bw, bh) + 1e-6)
+        is_touching = False
+        seg_quality = "good"
+
+        if area_ratio > merge_area_ratio or aspect > merge_aspect_ratio:
+            is_touching = True
+            seg_quality = "uncertain"
+            uncertain_count += 1
+            estimated_merged += 1
+
+        grain_id += 1
+        hull = cv2.convexHull(contour)
+        hull_area = cv2.contourArea(hull)
+        solidity = area / hull_area if hull_area > 0 else 0
+        confidence = min(1.0, solidity * 0.7 + 0.3)
+
+        grain = GrainInstance(
+            grain_id=grain_id,
+            mask=component * 255,
+            bbox=(x, y, bw, bh),
+            confidence=round(float(confidence), 4),
+            centroid=(float(centroids[label, 0]), float(centroids[label, 1])),
+            contour=contour,
+            is_touching=is_touching,
+            segmentation_quality=seg_quality,
+            method="classical_cv_fallback",
+        )
+        grains.append(grain)
+
+    detected_count = grain_id + rejected_count
+    accepted_count = len(grains)
+    if not grains:
+        warnings.append("No grain instances found after segmentation.")
+    return SegmentationResult(
+        grains=grains,
+        detected_count=detected_count,
+        accepted_count=accepted_count,
+        uncertain_count=uncertain_count,
+        rejected_count=rejected_count,
+        estimated_merged_count=estimated_merged,
+        method="classical_cv_fallback",
+        processing_time_seconds=0.0,
+        warnings=warnings,
+    )
+
+
 def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
     """
     Classical CV fallback pipeline for grain segmentation.
@@ -227,6 +324,9 @@ def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
         warnings.append("Detected dark background — segmented bright grain foreground")
     else:
         warnings.append("Detected light background — segmented dark grain foreground")
+
+    if max(h, w) >= 700 or (h * w) >= 600_000:
+        return _segment_large_image_fast(image_rgb, binary, warnings)
     
     # Morphological operations
     kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))

@@ -55,10 +55,19 @@ def test_public_dataset_manifest_distinguishes_candidates_from_training_data():
     datasets = {dataset["dataset_id"]: dataset for dataset in manifest["datasets"]}
 
     assert datasets["graindet_rice_v2"]["license"] == "CC BY 4.0"
-    assert datasets["graindet_rice_v2"]["status"] == "external_candidate_download_blocked"
+    assert datasets["graindet_rice_v2"]["status"] == (
+        "local_candidate_not_approved_class_map_and_split_group_leakage"
+    )
+    assert datasets["graindet_rice_v2"]["reported_images"] == 20000
+    assert datasets["graindet_rice_v2"]["published_splits"]["train"] == 17000
+    audit = _load_json("data/manifests/dataset_audit_2026-09-27.json")
+    assert audit["datasets"]["graindet_rice_v2"]["split_counts"]["train"] == 17432
     assert datasets["roboflow_rice_quality_parameters_v1"]["reported_images"] == 224
     assert datasets["uci_rice_cammeo_osmancik"]["reported_images"] == 0
     assert datasets["rice_gate_synthetic_features_v1"]["real_world"] is False
+    wheat_candidate = datasets["roboflow_wheat_grain_gate_negatives_v1"]
+    assert wheat_candidate["status"] == "external_candidate_not_downloaded_source_groups_unverified"
+    assert wheat_candidate["reported_images"] == 5155
 
 
 def test_synthetic_model_scores_are_not_recorded_as_valid_evaluation_metrics():

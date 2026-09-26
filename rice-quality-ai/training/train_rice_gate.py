@@ -68,10 +68,41 @@ def generate_hard_negative_dataset(n_samples_per_class: int = 1200, random_state
     return X, y
 
 
+def _has_real_manifest_rows(manifest_path: Path) -> bool:
+    """Return True only when a reviewed manifest contains real labeled rows."""
+    if not manifest_path.is_file():
+        return False
+
+    try:
+        lines = manifest_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+
+    meaningful = [
+        line.strip()
+        for line in lines
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if len(meaningful) < 2:
+        return False
+
+    header = meaningful[0].lower()
+    if "image_path" not in header or "label" not in header:
+        return False
+
+    for row in meaningful[1:]:
+        parts = [part.strip() for part in row.split(",")]
+        if len(parts) < 4:
+            continue
+        if parts[0] and parts[2] and parts[0] != "image_path":
+            return True
+    return False
+
+
 def train_rice_gate_model():
     """Refuse to overwrite the functioning gate with synthetic feature metrics."""
     manifest_path = PROJECT_ROOT / "data" / "processed" / "rice_gate" / "manifest.csv"
-    if not manifest_path.is_file():
+    if not _has_real_manifest_rows(manifest_path):
         raise FileNotFoundError(
             f"Missing {manifest_path}. Real labeled object crops/features are required; "
             "synthetic gate training is disabled."
