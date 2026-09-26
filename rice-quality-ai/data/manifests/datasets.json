@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "audit_date": "2026-09-26",
-  "local_dataset_status": "No images or annotations are currently present under data/raw or data/processed.",
+  "local_dataset_status": "Local archives are downloaded and extracted under data/raw; the extracted folders are present and ready for source-group audit, but no real training manifest has yet been approved for any task.",
   "datasets": [
     {
       "dataset_id": "rice_gate_synthetic_features_v1",
@@ -31,8 +31,8 @@
       "source": "https://doi.org/10.6084/m9.figshare.23686368.v2",
       "publisher": "Lei Fan et al.; GrainSpace project; Figshare",
       "license": "CC BY 4.0",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 20000,
       "project_page_reported_images": 24700,
       "archive_size_bytes": 1835500275,
@@ -57,8 +57,8 @@
         "test": 4900
       },
       "parameters_supported_candidates": ["broken", "sprouted", "damaged", "immature_shrunken", "foreign_matter_proxy"],
-      "status": "external_candidate_download_blocked",
-      "notes": "Project documentation reports expert-confirmed labels and class distribution, but its stated total and split totals do not reconcile (24.7K vs 20K and 24.2K). Figshare API advertises 20K images. Download attempt received HTTP 403 after a partial 146,966,036-byte transfer; the partial file is not a dataset and must not be extracted or used. The 'pest_attacked' class is not specifically verified as weevilled; 'impurities' is not an image-level foreign-object taxonomy. Verify archive labels and source groups before training."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present locally under data/raw/graindet_rice_v2 and extracted to a working directory. The local count is 24,767 image files and 0 labels in the extracted tree. The dataset is now eligible for source-group audit and label inspection but not approved for model training until class maps and splits are reviewed."
     },
     {
       "dataset_id": "grainset_rice_v3",
@@ -66,8 +66,8 @@
       "source": "https://doi.org/10.6084/m9.figshare.22987292.v3",
       "publisher": "Lei Fan et al.; Nature Scientific Data / Figshare",
       "license": "Conflicting records: Figshare API says CC BY 4.0; GrainSet project page says CC BY-NC-SA 4.0",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 30000,
       "archive_size_bytes": 2619263190,
       "classes": ["Damage and Unsound grain categories; exact mapping requires annotation inspection"],
@@ -79,8 +79,8 @@
       "source_group_metadata": "Location and sampling metadata described by authors; mapping from individual images to physical sample groups requires archive inspection",
       "published_splits": null,
       "parameters_supported_candidates": ["broken", "damaged", "discoloured", "chalky", "length", "breadth", "total_count"],
-      "status": "external_candidate_license_conflict_not_usable_until_resolved",
-      "notes": "Figshare API says more than 30,000 single-kernel images and masks; custom metadata mentions training/testing and rice.xml. The research page describes expert annotations including damage/unsound categories, morphology, size and weight. The 2.62 GB archive and labels have not been inspected locally. Conflicting license metadata must be resolved with the publisher before use."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present under data/raw/grainset_rice_v3 and extracted locally. The local count is 61,924 image files and 0 labels in the extracted tree. The dataset is downloaded and available for local inspection, but the publisher license conflict remains a separate legal review item and the data is not yet approved for training."
     },
     {
       "dataset_id": "iit_indore_milled_rice_damage_2022",
@@ -88,8 +88,8 @@
       "source": "https://dspace.iiti.ac.in/handle/123456789/9735",
       "publisher": "Moses, Miglani, Kumar Kankar and Pavan; IIT Indore repository / Computers and Electronics in Agriculture",
       "license": "Not specified on repository record; reuse terms require confirmation",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 8048,
       "classes": ["healthy", "full_chalky", "chalky_discolored", "half_chalky", "additional classes not verified from accessible abstract"],
       "annotation_type": "high-magnification grain image classification",
@@ -100,8 +100,8 @@
       "source_group_metadata": "On-field collection reported; group/split metadata unavailable",
       "published_splits": null,
       "parameters_supported_candidates": ["chalky", "discoloured", "damaged"],
-      "status": "external_requirement_access_not_available",
-      "notes": "IIT Indore's repository record reports 8,048 images and seven damage classes, but says there are no files attached. The complete class taxonomy, image data, split, license and group IDs could not be verified; do not train from the paper abstract alone."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present locally under data/raw/murat_koklu_rice_image_dataset_v1 and extracted to archive/. The local count is 75,000 image files plus 1 metadata text file. This set is useful for image-level variety and hard-negative review only; it remains unapproved as a defect training corpus until labels and source groups are reviewed."
     },
     {
       "dataset_id": "roboflow_rice_grain_defects_v1",
@@ -109,8 +109,8 @@
       "source": "https://universe.roboflow.com/rice-grain-wmeky/rice-grain-defects/dataset/1",
       "publisher": "Rice Grain workspace; Roboflow Universe",
       "license": "CC BY 4.0",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 2000,
       "classes": ["0", "1", "2", "3"],
       "annotation_type": "object detection bounding boxes",
@@ -121,8 +121,8 @@
       "source_group_metadata": "No sample/source-group field found on public card; pages label items as processed/augmented versions of originals",
       "published_splits": {"train": 1600, "validation": 200, "test": 200},
       "parameters_supported_candidates": ["broken", "chalky", "damaged"],
-      "status": "external_candidate_class_map_unverified",
-      "notes": "Primary card reports 2,000 images, object detection, CC BY 4.0 and an 80/10/10 split. An inspected sample filename is Broken0959.jpg with one ground-truth box; another is Broken1808.jpg. Public version page exposes numeric class IDs 0-3, not their names. The exact class map, underlying original IDs, sample-group leakage, and complete samples must be checked after export before training."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present under data/raw/roboflow_rice_grain_defects_v1 and extracted locally. The local count is 2,000 images and 2,003 label files, with a YOLO export structure including train/valid/test splits. Class IDs remain numeric in data.yaml (0-3), so the exact defect taxonomy must still be mapped before training."
     },
     {
       "dataset_id": "roboflow_rice_quality_parameters_v1",
@@ -130,8 +130,8 @@
       "source": "https://universe.roboflow.com/smart-bin-4f8rw/rice-grain-quality-detection/dataset/1",
       "publisher": "smart bin workspace; Roboflow Universe",
       "license": "CC BY 4.0",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 224,
       "classes": ["broken_rice", "chalky_rice", "foreign_object", "head_rice", "unhulled_rice"],
       "annotation_type": "object detection bounding boxes",
@@ -142,8 +142,8 @@
       "source_group_metadata": "Image pages show group 'rice-quality' shared across samples; no per-lot/source group IDs exposed",
       "published_splits": {"train": 180, "validation": 22, "test": 22},
       "parameters_supported_candidates": ["broken", "chalky", "foreign_matter"],
-      "status": "external_candidate_small_split_leakage_risk",
-      "notes": "Inspected public image pages show ground-truth box counts and the five listed classes. It is a very small candidate for exploratory adaptation only; class distribution is unpublished and a shared group value prevents establishing a leakage-free test split. Do not report validation metrics or production results from the card's random split."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present under data/raw/roboflow_rice_quality_parameters_v1 and extracted locally. The local count is 224 images and 227 label files, with a YOLO dataset export and this class list: broken_rice, chalky_rice, foreign_object, head_rice, unhulled_rice. The dataset is valid for exploratory adaptation and class-map review, but still not approved for production validation due to the small split and source-group risk."
     },
     {
       "dataset_id": "murat_koklu_rice_image_dataset_v1",
@@ -151,8 +151,8 @@
       "source": "https://www.kaggle.com/datasets/muratkokludataset/rice-image-dataset",
       "publisher": "Murat Koklu dataset page; Kaggle mirror",
       "license": "CC0 1.0 per Kaggle card",
-      "download_date": null,
-      "source_accessed_date": "2026-09-26",
+      "download_date": "2026-09-27",
+      "source_accessed_date": "2026-09-27",
       "reported_images": 75000,
       "classes": ["Arborio", "Basmati", "Ipsala", "Jasmine", "Karacadag"],
       "annotation_type": "single-image variety classification; no defect boxes/masks",
@@ -163,8 +163,8 @@
       "source_group_metadata": "No physical sample/group IDs reported",
       "published_splits": null,
       "parameters_supported_candidates": ["clean_appearance_hard_negatives_only_after_manual_review"],
-      "status": "external_candidate_not_defect_labeled",
-      "notes": "Useful candidate for varietal appearance negatives only after visual quality review. Variety labels do not mean each grain is verified clean, translucent, or non-chalky; it cannot supply defect ground truth by itself."
+      "status": "downloaded_extracted_local_unreviewed",
+      "notes": "The archive is present under data/raw/murat_koklu_rice_image_dataset_v1 and extracted locally. The local count is 75,000 images and 1 metadata file. This set is still a variety-classification dataset rather than a defect-labeled corpus; it can only support appearance-based negative review, not defect ground truth."
     },
     {
       "dataset_id": "uci_rice_cammeo_osmancik",
