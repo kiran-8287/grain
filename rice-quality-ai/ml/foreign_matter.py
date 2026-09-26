@@ -89,6 +89,102 @@ def detect_foreign_matter(
     return result
 
 
+def classify_non_rice_object(mean_rgb) -> str:
+    """
+    Colour rule that assigns one of the project's foreign-matter class names
+    (models/foreign_matter/class_mapping.json) to a NON-RICE object.
+
+    Shared by the foreign-matter heuristic and the rice gate so both channels
+    always speak the same class vocabulary. This function must never return a
+    rice class name — foreign matter is not rice.
+    """
+    arr = np.asarray(mean_rgb, dtype=np.float32).reshape(-1)
+    r, g, b = float(arr[0]), float(arr[1]), float(arr[2])
+
+    if r < 80 and g < 80 and b < 80:
+        return "stone"
+    if g > r + 30:
+        return "organic"
+    return "other_foreign_matter"
+
+
+def merge_gate_foreign_objects(
+    fm_result: ForeignMatterResult,
+    rice_gate: Optional[Dict],
+    iou_threshold: float = 0.5,
+) -> ForeignMatterResult:
+    """
+    Merge the rice gate's non-rice detections into the foreign-matter result.
+
+    The foreign-matter channel excludes regions already segmented as grains, so an
+    object that the segmenter accepted as a "grain" would otherwise be missing from
+    the foreign-matter report. The rice gate classifies every detected object
+    independently (rice class vs. the foreign-matter class vocabulary), so its
+    non-rice detections are authoritative and are merged in — deduplicated against
+    the objects that were already reported.
+
+    Foreign matter is NOT rice and must stay separately visible.
+    """
+    if not rice_gate or not rice_gate.get("detections"):
+        return fm_result
+
+    def _iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        x1, y1 = max(ax, bx), max(ay, by)
+        x2, y2 = min(ax + aw, bx + bw), min(ay + ah, by + bh)
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        if inter <= 0:
+            return 0.0
+        union = aw * ah + bw * bh - inter
+        return inter / union if union > 0 else 0.0
+
+    objects = list(fm_result.objects)
+    added = 0
+
+    for detection in rice_gate["detections"]:
+        if detection.get("is_rice"):
+            continue
+        bbox = detection.get("bbox") or []
+        if len(bbox) != 4:
+            continue
+        bbox = (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))
+        if any(_iou(bbox, obj.bbox) >= iou_threshold for obj in objects):
+            continue
+        added += 1
+        objects.append(
+            ForeignObject(
+                foreign_id=len(objects) + 1,
+                class_name=str(detection.get("class_name", "other_foreign_matter")),
+                confidence=float(detection.get("confidence", 0.0)),
+                bbox=bbox,
+                area_pixels=int(detection.get("area_pixels", 0)),
+            )
+        )
+
+    if added == 0:
+        return fm_result
+
+    total_area = fm_result.total_image_area
+    total_foreign_area = sum(obj.area_pixels for obj in objects)
+
+    return ForeignMatterResult(
+        objects=objects,
+        foreign_object_count=len(objects),
+        foreign_matter_fraction_estimate=(
+            total_foreign_area / total_area if total_area > 0 else 0.0
+        ),
+        total_image_area=total_area,
+        method=f"{fm_result.method}+rice_gate",
+        processing_time_seconds=fm_result.processing_time_seconds,
+        warnings=list(fm_result.warnings)
+        + [
+            f"{added} non-rice object(s) identified by the rice gate were added to the "
+            "foreign-matter report (they were segmented as grain instances)."
+        ],
+    )
+
+
 def _detect_foreign_yolo(
     image_rgb: np.ndarray,
     model_path,
@@ -194,13 +290,8 @@ def _detect_foreign_heuristic(
         
         mean_color = np.mean(roi.reshape(-1, 3), axis=0)
         
-        # Simple heuristic classification
-        if mean_color[0] < 80 and mean_color[1] < 80 and mean_color[2] < 80:
-            cls_name = "stone"
-        elif mean_color[1] > mean_color[0] + 30:
-            cls_name = "organic"
-        else:
-            cls_name = "other_foreign_matter"
+        # Simple heuristic classification (shared with the rice gate)
+        cls_name = classify_non_rice_object(mean_color)
         
         fid += 1
         total_foreign_area += area

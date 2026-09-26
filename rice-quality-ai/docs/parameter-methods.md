@@ -16,7 +16,7 @@ This document provides complete technical specifications for how each of the exa
   3. $\text{Broken}_i = L_i < 0.75 \cdot L_{\text{whole}}$
   4. Small broken pieces ($L_i < 0.25 \cdot L_{\text{whole}}$) are tracked separately.
 - **Small-Sample Behavior**: For $N \le 2$, returns `broken_label: "undetermined"` because a reference population cannot be computed from $\le 2$ grains.
-- **Scientific Classification**: Official Concept Threshold (Ref: KMS 2026-27 25% max).
+- **Scientific Classification**: Official concept with image-count proxy; configured limit is historical/reference only, not verified as current KMS 2026-27.
 
 ---
 
@@ -38,21 +38,21 @@ This document provides complete technical specifications for how each of the exa
 - **Formula**:
   $$\Delta E = \sqrt{(L_i^* - L_{\text{ref}}^*)^2 + (a_i^* - a_{\text{ref}}^*)^2 + (b_i^* - b_{\text{ref}}^*)^2}$$
   Kernel is discoloured if $\Delta E > 15.0$ over $> 20\%$ of grain area.
-- **Scientific Classification**: Engineering Heuristic (Ref: KMS 2026-27 3.0% max).
+- **Scientific Classification**: Engineering Heuristic; configured limit is historical/reference only, not verified as current KMS 2026-27.
 
 ---
 
 ### 4. Chalky Grain
 - **Scope**: Per-Grain
-- **Definition**: Kernels having an opaque, milky-white chalky appearance over at least half the kernel area.
-- **Why ML**: Chalkiness is characterized by both high reflectance ($L^*$) and distinct fine-grain scattering texture. Logistic Regression on combined color and GLCM features provides calibrated class probabilities.
+- **Definition**: Grain-level classification of the opaque, milky-white chalky appearance; the classifier does not segment chalky subregions or infer brittleness from RGB.
+- **Why ML**: Grain-level color and internal texture features can support this distinction when trained and evaluated on labeled rice grains. Brightness alone is not chalkiness.
 - **Input Features**:
   - $L^*$, $a^*$, $b^*$ mean and standard deviation
-  - Bright-pixel fraction ($L^* > 85$)
-  - Chalky pixel fraction (low saturation, high value)
+  - Mask-only brightness distribution and descriptive bright-pixel fraction
+  - Mask-only GLCM texture; co-occurrence pairs require both pixels inside the instance mask
   - GLCM Contrast, Homogeneity, Energy, and Correlation
-- **Model**: `sklearn.linear_model.LogisticRegression(class_weight='balanced')`.
-- **Scientific Classification**: Literature-Supported ML.
+- **Model**: Grain-level Logistic Regression is enabled only for artifacts trained on real labeled images and masks. Current synthetic-feature artifact is disabled; chalkiness is `Undetermined` until a validated model is available.
+- **Scientific Classification**: Experimental grain-level ML; raw model scores are not calibrated probabilities.
 
 ---
 
@@ -89,7 +89,7 @@ This document provides complete technical specifications for how each of the exa
 - **Definition**: Grains exhibiting germinated shoots at the embryo tip or bored holes/tunnels caused by insects (weevils).
 - **Method**: ResNet-18 transfer learning on padded crops ($224 \times 224$).
 - **Fallback**: Laplacian texture variance and deep cavity detection.
-- **Scientific Classification**: Literature-Supported ML (Limited/Cross-Domain Data).
+- **Scientific Classification**: Experimental ML; checked-in checkpoint was trained on synthetic demonstration crops and is not validated on real rice grains.
 
 ---
 
@@ -111,7 +111,7 @@ This document provides complete technical specifications for how each of the exa
   3. Calculate robust covariance and Mahalanobis distance:
      $$D_M(x) = \sqrt{(x - \mu)^T \Sigma^{-1} (x - \mu)}$$
   4. Kernels with $D_M > 3.0$ are counted as statistical admixture outliers.
-- **Scientific Classification**: Statistical Distribution Proxy (Ref: KMS 2026-27 6.0% max for Grade A).
+- **Scientific Classification**: Statistical Distribution Proxy; configured limit is historical/reference only, not verified as current KMS 2026-27.
 
 ---
 

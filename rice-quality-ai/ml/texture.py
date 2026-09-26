@@ -11,14 +11,17 @@ Features extracted:
 """
 
 import logging
+import json
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from ml.config import get_threshold
+from ml.config import get_model_info, get_project_root, get_threshold
 
 logger = logging.getLogger(__name__)
+_CHALKY_ARTIFACTS = None
 
 
 def compute_glcm(
@@ -26,6 +29,7 @@ def compute_glcm(
     distances: List[int] = None,
     angles: List[float] = None,
     levels: int = 256,
+    mask: np.ndarray = None,
 ) -> np.ndarray:
     """
     Compute GLCM manually (avoiding skimage dependency for basic version).
@@ -38,12 +42,21 @@ def compute_glcm(
     if angles is None:
         angles = [0, np.pi/4, np.pi/2, 3*np.pi/4]
     
-    # Quantize to fewer levels for efficiency
+    valid_mask = mask > 0 if mask is not None else np.ones(gray_image.shape, dtype=bool)
+    valid_pixels = gray_image[valid_mask]
+    if valid_pixels.size == 0:
+        return np.zeros((min(levels, 64), min(levels, 64)), dtype=np.float64)
+
+    # Quantize from valid pixels only so background intensity cannot set the scale.
     n_levels = min(levels, 64)
-    if gray_image.max() > 0:
-        quantized = (gray_image.astype(float) / gray_image.max() * (n_levels - 1)).astype(np.uint8)
+    min_value = float(valid_pixels.min())
+    value_range = float(valid_pixels.max()) - min_value
+    if value_range > 0:
+        quantized = (
+            (gray_image.astype(float) - min_value) / value_range * (n_levels - 1)
+        ).clip(0, n_levels - 1).astype(np.uint8)
     else:
-        quantized = gray_image.astype(np.uint8)
+        quantized = np.zeros(gray_image.shape, dtype=np.uint8)
     
     h, w = quantized.shape
     glcm = np.zeros((n_levels, n_levels), dtype=np.float64)
@@ -57,6 +70,8 @@ def compute_glcm(
                 for j in range(max(0, -dx), min(w, w - dx)):
                     row_val = quantized[i, j]
                     col_val = quantized[i + dy, j + dx]
+                    if not (valid_mask[i, j] and valid_mask[i + dy, j + dx]):
+                        continue
                     glcm[row_val, col_val] += 1
     
     # Normalize
@@ -136,20 +151,15 @@ def extract_chalky_features(
     mean_a = float(np.mean(a_star))
     mean_b = float(np.mean(b_star))
     
-    # Bright pixel fraction
+    # Brightness statistics are descriptive features, not a chalkiness decision.
     bright_threshold = get_threshold("chalky", "bright_pixel_l_threshold", 85)
-    bright_fraction_thresh = get_threshold("chalky", "bright_pixel_fraction_threshold", 0.3)
     bright_pixels = np.sum(l_star > bright_threshold)
     total_pixels = len(l_star)
     bright_fraction = bright_pixels / total_pixels if total_pixels > 0 else 0.0
     
-    # GLCM features on grayscale of grain region
+    # GLCM pairs are counted only when both pixels belong to the grain.
     gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
-    # Apply mask
-    gray_masked = gray.copy()
-    gray_masked[crop_mask == 0] = 0
-    
-    glcm = compute_glcm(gray_masked)
+    glcm = compute_glcm(gray, mask=crop_mask)
     glcm_feats = glcm_features(glcm)
     
     # Chalky pixel fraction estimate
@@ -191,24 +201,83 @@ def _empty_chalky_features() -> Dict[str, float]:
 
 def heuristic_chalky_classification(features: Dict[str, float]) -> Dict:
     """
-    Heuristic fallback for chalkiness when ML model is unavailable.
-    
-    Uses bright-pixel fraction and chalky-pixel fraction as proxies.
-    Clearly labelled as heuristic.
+    Predict only from a real-data-trained artifact; otherwise abstain.
+
+    Brightness alone is not evidence of chalkiness. Model inputs are the
+    mask-normalized grain-level features produced above.
     """
-    bright_frac = features.get("bright_pixel_fraction", 0)
-    chalky_frac = features.get("chalky_pixel_fraction", 0)
-    mean_l = features.get("mean_l_star", 0)
-    
-    score = 0.4 * bright_frac + 0.4 * chalky_frac + 0.2 * (mean_l / 255.0)
-    
-    threshold = get_threshold("chalky", "probability_threshold", 0.5)
-    
+    global _CHALKY_ARTIFACTS
+    model_info = get_model_info("chalky")
+    weights_path = Path(model_info.get("weights_path", "models/chalky/model.joblib"))
+    model_dir = get_project_root() / weights_path.parent
+    metadata_path = model_dir / "metadata.json"
+    try:
+        if _CHALKY_ARTIFACTS is None:
+            import joblib
+
+            with metadata_path.open(encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+            if metadata.get("status") != "trained":
+                raise ValueError("No validated real-grain chalky model is available")
+            with (model_dir / "feature_schema.json").open(encoding="utf-8") as schema_file:
+                feature_names = json.load(schema_file)["features"]
+            _CHALKY_ARTIFACTS = (
+                joblib.load(model_dir / "model.joblib"),
+                joblib.load(model_dir / "scaler.joblib"),
+                feature_names,
+                metadata,
+            )
+
+        classifier, scaler, feature_names, metadata = _CHALKY_ARTIFACTS
+        class_mapping = metadata.get("classes", {})
+        positive_ids = [
+            str(class_id)
+            for class_id, label in class_mapping.items()
+            if str(label).strip().lower() == "chalky"
+        ]
+        if len(positive_ids) != 1:
+            raise ValueError("Model metadata must map exactly one class to chalky")
+
+        feature_vector = np.asarray([[features[name] for name in feature_names]], dtype=float)
+        probabilities = classifier.predict_proba(scaler.transform(feature_vector))[0]
+        positive_index = next(
+            index
+            for index, class_id in enumerate(classifier.classes_)
+            if str(class_id) == positive_ids[0]
+        )
+        chalky_probability = float(probabilities[positive_index])
+        threshold = float(metadata["decision_threshold"])
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("Chalky decision threshold must be between 0 and 1")
+        label = "chalky" if chalky_probability >= threshold else "not_chalky"
+        return {
+            "chalky_label": label,
+            "chalky_probability": round(chalky_probability, 4),
+            "confidence": round(max(chalky_probability, 1.0 - chalky_probability), 4),
+            "probability_calibrated": False,
+            "decision_threshold": threshold,
+            "threshold_source": metadata.get("threshold_source", "validation set"),
+            "chalky_model_version": metadata.get("version", "unknown"),
+            "training_dataset": metadata.get("dataset"),
+            "classes": class_mapping,
+            "method": "grain-level Logistic Regression on instance-mask LAB/GLCM features",
+            "_source": "trained_grain_level_classifier",
+            "limitation": "Raw model probability is not calibrated; use as an experimental grain-level prediction.",
+        }
+    except (FileNotFoundError, KeyError, ValueError, OSError, AttributeError) as error:
+        logger.info("Chalky classifier abstained: %s", error)
+
     return {
-        "chalky_label": "chalky" if score >= threshold else "not_chalky",
-        "chalky_probability": round(score, 4),
-        "chalky_model_version": "heuristic_fallback_v1",
-        "method": "heuristic — LAB brightness + chalky pixel fraction",
-        "_source": "engineering_heuristic",
-        "limitation": "Heuristic fallback — ML model not available",
+        "chalky_label": "undetermined",
+        "chalky_probability": None,
+        "confidence": None,
+        "probability_calibrated": False,
+        "chalky_model_version": "unvalidated_synthetic_model_disabled",
+        "method": "unavailable — validated grain-level classifier required",
+        "_source": "unvalidated_model_disabled",
+        "limitation": (
+            "The available Logistic Regression was trained on synthetic feature vectors, "
+            "not labeled rice-grain images; its probability is not reported. "
+            "Mask-normalized features are retained for future validated training."
+        ),
     }

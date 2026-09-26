@@ -10,7 +10,7 @@ import { GrainTable } from './components/GrainTable';
 import { QualityWarningsPanel } from './components/QualityWarningsPanel';
 import { ExportControls } from './components/ExportControls';
 import { AnalysisResult, GrainInstance } from './types';
-import { AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { AlertCircle, RefreshCw, Layers, XCircle } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -19,8 +19,10 @@ export const App: React.FC = () => {
   const [backendHealthy, setBackendHealthy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nonRiceMessage, setNonRiceMessage] = useState<string | null>(null);
+  const [nonRiceResult, setNonRiceResult] = useState<AnalysisResult | null>(null);
 
-  // Health check on mount
+  const riceGate = nonRiceResult?.rice_gate;
+
   useEffect(() => {
     const checkHealth = async () => {
       try {
@@ -47,6 +49,7 @@ export const App: React.FC = () => {
     setIsLoading(true);
     setErrorMessage(null);
     setNonRiceMessage(null);
+    setNonRiceResult(null);
     setResult(null);
 
     const formData = new FormData();
@@ -71,8 +74,7 @@ export const App: React.FC = () => {
       const data: AnalysisResult = await response.json();
 
       if (!data.rice_detected) {
-        // Explicit prompt requirement:
-        // "No rice grains detected. Please upload an image containing rice grains."
+        setNonRiceResult(data);
         setNonRiceMessage(data.message || 'No rice grains detected. Please upload an image containing rice grains.');
       } else {
         setResult(data);
@@ -92,13 +94,14 @@ export const App: React.FC = () => {
     setSelectedGrainId(null);
     setErrorMessage(null);
     setNonRiceMessage(null);
+    setNonRiceResult(null);
   };
 
   const selectedGrain: GrainInstance | null =
     result?.grains?.find((g) => g.id === selectedGrainId) || (result?.grains?.[0] ?? null);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-surface-page text-text-primary flex flex-col">
       {/* Navbar */}
       <Navbar
         onReset={handleReset}
@@ -110,39 +113,74 @@ export const App: React.FC = () => {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         {/* Error Banner */}
         {errorMessage && (
-          <div className="mb-6 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="mb-6 bg-error-bg border border-error/30 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
             <div className="flex-1">
-              <span className="font-semibold text-rose-300 text-sm">Analysis Request Failed</span>
-              <p className="text-xs text-rose-200/90 mt-1">{errorMessage}</p>
+              <span className="font-semibold text-error text-sm">Analysis Request Failed</span>
+              <p className="text-xs text-text-secondary mt-1">{errorMessage}</p>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-xs text-rose-300 hover:text-white underline"
+              className="text-xs text-error hover:text-text-primary underline"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Non-Rice Detected Message (Section 1 of tasks.txt) */}
+        {/* Non-Rice Detected Message */}
         {nonRiceMessage && (
-          <div className="max-w-xl mx-auto my-12 bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-4 shadow-2xl">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-              <AlertCircle className="w-8 h-8" />
+          <div className="max-w-xl mx-auto my-12 bg-notrice-bg border border-notrice-border rounded-2xl p-8 text-center space-y-4">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-notrice-bg border border-notrice-border flex items-center justify-center text-notrice-text">
+              <XCircle className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold text-white">No Rice Grains Detected</h2>
-            <p className="text-sm text-slate-300 leading-relaxed font-medium">
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-widest text-text-muted font-semibold">
+                Rice Analysis
+              </p>
+              <h2 className="text-xl font-bold text-text-primary">NOT RICE</h2>
+            </div>
+            <p className="text-sm text-text-secondary leading-relaxed font-medium">
               "{nonRiceMessage}"
             </p>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              The computer vision detector analyzed object aspect ratios, contours, and surface textures.
-              No valid rice grains were found. Fake measurements are strictly prevented.
+            {riceGate && (
+              <div className="grid grid-cols-3 gap-3 pt-1">
+                <div className="bg-surface border border-border rounded-xl px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Rice Grains</p>
+                  <p className="text-lg font-bold text-text-primary">{riceGate.rice_detections}</p>
+                </div>
+                <div className="bg-surface border border-border rounded-xl px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Foreign Matter</p>
+                  <p className="text-lg font-bold text-text-primary">{riceGate.foreign_matter_detections}</p>
+                </div>
+                <div className="bg-surface border border-border rounded-xl px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Objects Detected</p>
+                  <p className="text-lg font-bold text-text-primary">{riceGate.total_detections}</p>
+                </div>
+              </div>
+            )}
+            {riceGate && (
+              <p className="text-xs text-warning font-semibold">
+                Rice analysis stopped — segmentation, per-grain measurements, defect
+                classification, grading and admixture were NOT executed.
+              </p>
+            )}
+            <p className="text-xs text-text-secondary max-w-md mx-auto">
+              The detector analysed every object in the image and compared it against the
+              rice class (
+              <span className="text-text-primary font-medium">{riceGate?.rice_class_name ?? 'rice_grain'}</span>
+              , confidence threshold{' '}
+              {riceGate?.rice_confidence_threshold ?? '—'}). Foreign matter is detected and
+              reported separately — it is never treated as rice. Fake measurements are
+              strictly prevented.
             </p>
+            {riceGate && (
+              <p className="text-[10px] font-mono text-text-muted break-words">{riceGate.debug}</p>
+            )}
             <div className="pt-2">
               <button
                 onClick={handleReset}
-                className="px-6 py-2.5 rounded-xl font-semibold text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 transition shadow-lg shadow-amber-500/20"
+                className="px-6 py-2.5 rounded-xl font-semibold text-xs bg-brand hover:bg-brand-dark text-white transition"
               >
                 Upload Another Image
               </button>
@@ -199,7 +237,7 @@ export const App: React.FC = () => {
               />
             )}
 
-            {/* 4. Official Standards Screening (India KMS 2026-27) */}
+            {/* 4. Historical/reference image screening */}
             <StandardsScreening standards={result.standards} />
 
             {/* 5. Provenance & Diagnostics */}
@@ -218,7 +256,7 @@ export const App: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-400">
+      <footer className="border-t border-border bg-surface-page py-4 text-center text-xs text-text-muted">
         Rice Quality AI &bull; Kharif Marketing Season 2026-27 Standards Screening &bull; Multi-Label Defect Model
       </footer>
     </div>

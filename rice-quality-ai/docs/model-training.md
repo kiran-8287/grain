@@ -14,7 +14,10 @@ This document describes the training pipelines, datasets, loss functions, archit
   - `models/chalky/metadata.json`
 - **Algorithm**: `sklearn.linear_model.LogisticRegression(class_weight='balanced')`
 - **Input**: 10 engineered color & GLCM texture features.
-- **Evaluation**: Evaluated on independent test split with Accuracy, Precision, Recall, F1, ROC-AUC, and Confusion Matrix.
+- **Data**: `data/processed/chalky/manifest.csv` with `image_path,mask_path,label,source_group`; positives must be genuinely chalky grains. Clean negatives must include translucent and naturally bright grains, multiple varieties/appearances, and different backgrounds. `source_group` must identify the source image or acquisition batch so related crops cannot cross splits.
+- **Preprocessing**: Training calls the same mask-only LAB/GLCM feature extractor as inference.
+- **Evaluation**: Source-group-disjoint train/validation/test splits; reports precision, recall, F1, ROC-AUC, confusion matrix, clean-rice false-positive rate, and Brier score. The validation split selects a decision threshold. Raw Logistic Regression probabilities remain uncalibrated.
+- **Current status**: The checked-in model was fit to synthetic feature vectors and is disabled. No real chalky/clean training corpus is checked in, so real-grain performance is not established.
 
 To train:
 ```bash
@@ -49,7 +52,10 @@ python training/train_damaged.py
   - `models/sprouted_weevilled/class_mapping.json`
   - `models/sprouted_weevilled/metadata.json`
 - **Architecture**: ResNet-18 pretrained backbone fine-tuned for germinated shoot protrusions and weevil bored cavities.
-- **Limitation Note**: Data is limited/cross-domain; lower confidence is explicitly communicated in the UI.
+- **Data**: `data/processed/sprouted_weevilled/manifest.csv` with `image_path,mask_path,label,source_group`; include both clean grains and known sprouted/weevilled grains. Split by source image/acquisition group.
+- **Preprocessing**: Shared instance-mask crop, black exterior fill, aspect-preserving pad to 224px, ImageNet normalization in training and inference.
+- **Evaluation**: Group-disjoint train/validation/test; reports precision, recall, F1, ROC-AUC, confusion matrix, clean-rice false-positive rate, and a validation-derived F1 threshold. Softmax scores are not calibrated.
+- **Current status**: The checked-in checkpoint was trained on synthetic demonstration crops. Its predictions are experimental and do not establish performance on real rice grains.
 
 To train:
 ```bash

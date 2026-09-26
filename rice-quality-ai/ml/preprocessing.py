@@ -255,6 +255,25 @@ def pad_to_square(image: np.ndarray, target_size: int = 224) -> np.ndarray:
     return resized
 
 
+def masked_grain_square_crop(
+    image_rgb: np.ndarray,
+    mask: np.ndarray,
+    target_size: int = 224,
+) -> Optional[np.ndarray]:
+    """Crop one grain, remove pixels outside its instance mask, and pad consistently."""
+    if mask.ndim != 2 or image_rgb.shape[:2] != mask.shape:
+        raise ValueError("Grain mask must be 2D and match the image dimensions")
+    coords = cv2.findNonZero(mask.astype(np.uint8))
+    if coords is None:
+        return None
+
+    x, y, width, height = cv2.boundingRect(coords)
+    crop_rgb = image_rgb[y:y + height, x:x + width].copy()
+    crop_mask = mask[y:y + height, x:x + width] > 0
+    crop_rgb[~crop_mask] = 0
+    return pad_to_square(crop_rgb, target_size=target_size)
+
+
 def image_to_bgr(image_rgb: np.ndarray) -> np.ndarray:
     """Convert RGB numpy array to BGR for OpenCV operations."""
     return cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)

@@ -11,18 +11,17 @@ Machine learning should only be used where linear/deterministic mathematical for
 - **Broken Grain**: The definition ($< 0.75 \times \text{whole kernel}$) is purely mathematical. The challenge is estimating the whole-kernel reference when broken grains are present. An iterative median estimator converges deterministically without needing training data.
 - **Discolouration**: CIELAB $\Delta E$ is the international standard for perceptual color difference. Comparing against the image's median grain profile adapts to varying illumination automatically.
 - **Damaged & Sprouted Grains**: Fungal decay, insect boring holes, and sprouts exhibit complex spatial textures and irregular morphology where deep CNN feature hierarchies (VGG-19, ResNet-18) significantly outperform heuristic rules.
-- **Chalkiness**: High brightness combined with GLCM texture scattering is well-modeled by Logistic Regression, providing calibrated probability estimates.
+- **Chalkiness**: Brightness alone is not a chalky signal. The grain-level feature extractor computes LAB statistics and GLCM pairs only within the instance mask. The checked-in model used synthetic features, so inference abstains until a real labeled grain corpus is available.
 
 ---
 
 ### Q2: Why does the system refuse to assign an official Government of India Grade?
 **Answer**:
-Scientific honesty. The Government of India KMS 2026-27 procurement standard specifies requirements that an RGB image cannot fulfill:
+Scientific honesty. The configured limits are historical/reference values; the current KMS 2026-27 primary document has not been independently verified in this repository. In addition, an RGB image cannot fulfill required official measurements:
 1. **Weight Percentages**: Official standards mandate weight percentages (e.g. broken grains $\le 25\%$ by weight). An optical camera measures surface area and instance counts, not grain density or mass.
-2. **Moisture Content**: Moisture requires dielectric or thermogravimetric measurement. It cannot be inferred from RGB pixels.
-3. **Dehusked Chemical Staining**: The official test for dehusked kernels requires alkaline chemical dye staining to reveal residual bran. An RGB camera can only provide a visual bran-color coverage proxy.
+2. **Dehusked Chemical Staining**: The official test for dehusked kernels requires alkaline chemical dye staining to reveal residual bran. An RGB camera can only provide a visual bran-color coverage proxy.
 
-Therefore, the system provides **Image-Based Standard Screening** against KMS 2026-27 reference limits while being transparent about these laboratory boundaries.
+Therefore, the system provides **Image-Based Standard Screening** against historical/reference limits, labels observed image fractions separately from official weight-based limits, and suppresses compliance conclusions for small samples or unreliable images.
 
 ---
 

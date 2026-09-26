@@ -27,7 +27,7 @@ graph TD
     C --> L[Foreign Matter Detector: Full Image YOLO]
     C --> M[Admixture Detector: Robust Mahalanobis]
     C --> N[Image Quality Assessment: Laplacian Blur & Median Pixel Area]
-    C --> O[Standards Engine: India KMS 2026-27 Screening]
+   C --> O[Standards Engine: Historical/Reference Screening]
     C --> P[Annotated Image Renderer: Masks, Contours, IDs]
     P --> Q[Pydantic Result Schema & JSON / CSV Exporters]
 ```
@@ -47,7 +47,7 @@ graph TD
 | **Colour Analysis** | `ml/colour.py` | Red cuticle coverage, Discolouration DeltaE, Dehusked bran coverage | CIELAB Euclidean DeltaE, HSV ranges |
 | **Foreign Matter** | `ml/foreign_matter.py` | Detects non-rice objects across the full image | YOLO11n fine-tuning, Contour morphology |
 | **Admixture** | `ml/admixture.py` | Sample-level outlier detection on whole grains | Robust Mahalanobis distance, covariance |
-| **Standards** | `ml/standards.py` | Compares observed metrics against KMS 2026-27 limits | India KMS 2026-27 screening engine |
+| **Standards** | `ml/standards.py` | Screens observed image fractions against historical/reference limits; suppresses small-sample and unreliable-image verdicts | Reference limits; current KMS 2026-27 not verified |
 | **Backend API** | `backend/app/` | FastAPI REST endpoints, job management, export streaming | FastAPI, Pydantic v2, Starlette |
 | **Frontend UI** | `frontend/` | Interactive dashboard, annotated viewer, grain inspector | React 18, Vite, TypeScript, Tailwind CSS |
 

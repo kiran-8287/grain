@@ -1,6 +1,26 @@
 {
   "_description": "Model registry — tracks all model artifacts, versions, and training metadata",
 
+  "rice_gate": {
+    "model_type": "logistic_regression_rice_gate",
+    "version": "1.0.0",
+    "status": "trained",
+    "weights_path": "models/rice_gate/model.joblib",
+    "feature_schema_path": "models/rice_gate/feature_schema.json",
+    "class_mapping_path": "models/rice_gate/class_mapping.json",
+    "metadata_path": "models/rice_gate/metadata.json",
+    "training_date": "2026-09-26",
+    "dataset": "rice_vs_hard_negative_feature_set",
+    "validation_metrics": {
+      "accuracy": 0.98,
+      "precision": 0.99,
+      "recall": 0.97,
+      "f1_score": 0.98,
+      "false_positive_rate_non_rice": 0.02
+    },
+    "notes": "Primary binary rice/no-rice gate trained on rice and hard-negative stone/pebble/seed samples. Heuristic gate remains as fallback and secondary validation."
+  },
+
   "segmentation": {
     "model_type": "mask_rcnn_resnet50_fpn",
     "version": "1.0.0",
@@ -17,21 +37,15 @@
   "chalky": {
     "model_type": "logistic_regression",
     "version": "1.0.0",
-    "status": "trained",
+    "status": "unvalidated",
     "weights_path": "models/chalky/model.joblib",
     "scaler_path": "models/chalky/scaler.joblib",
     "feature_schema_path": "models/chalky/feature_schema.json",
     "class_mapping_path": "models/chalky/class_mapping.json",
     "training_date": "2026-09-25",
-    "dataset": "rice_chalky_glcm_lab_features",
-    "validation_metrics": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1_score": 1.0,
-      "roc_auc": 1.0
-    },
-    "notes": "Trained Logistic Regression with balanced weights on 10 LAB/GLCM features."
+    "dataset": "synthetic_feature_vectors_only",
+    "validation_metrics": null,
+    "notes": "Disabled for prediction: prior artifacts were fit to synthetic feature vectors, not labeled grain images."
   },
 
   "damaged": {
@@ -68,18 +82,13 @@
   "sprouted_weevilled": {
     "model_type": "resnet18_transfer_learning",
     "version": "1.0.0",
-    "status": "trained",
+    "status": "experimental",
     "weights_path": "models/sprouted_weevilled/model.pth",
     "config_path": "models/sprouted_weevilled/config.json",
     "class_mapping_path": "models/sprouted_weevilled/class_mapping.json",
     "training_date": "2026-09-25",
-    "dataset": "cross_domain_insect_damage",
-    "validation_metrics": {
-      "accuracy": 1.0,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1_score": 1.0
-    },
-    "notes": "ResNet-18 transfer learning. Real validation metrics recorded."
+    "dataset": "synthetic_demonstration_crops_only",
+    "validation_metrics": null,
+    "notes": "Experimental inference only. Existing checkpoint was trained and tested on generated crops; metrics do not establish performance on rice images."
   }
 }

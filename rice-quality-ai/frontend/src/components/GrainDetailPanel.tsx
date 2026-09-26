@@ -10,10 +10,10 @@ interface GrainDetailPanelProps {
 export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit }) => {
   if (!grain) {
     return (
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
-        <Info className="w-8 h-8 mx-auto text-slate-600 mb-2" />
-        <h3 className="text-sm font-semibold text-slate-300">No Grain Selected</h3>
-        <p className="text-xs text-slate-400 mt-1">
+      <div className="bg-surface border border-border rounded-2xl p-6 text-center text-text-muted">
+        <Info className="w-8 h-8 mx-auto text-text-muted mb-2" />
+        <h3 className="text-sm font-semibold text-text-primary">No Grain Selected</h3>
+        <p className="text-xs text-text-secondary mt-1">
           Select any grain from the image or grain table to inspect its individual 14-parameter multi-label defect analysis.
         </p>
       </div>
@@ -47,10 +47,15 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
     },
     {
       title: 'Chalky',
-      status: defects.chalky.chalky_label === 'chalky' ? 'Yes' : 'No',
+      status: defects.chalky.chalky_label === 'chalky'
+        ? 'Yes'
+        : defects.chalky.chalky_label === 'not_chalky'
+        ? 'No'
+        : 'Undetermined',
       isDefect: defects.chalky.chalky_label === 'chalky',
-      confidence: defects.chalky.chalky_probability ? `${Math.round(defects.chalky.chalky_probability * 100)}%` : undefined,
+      confidence: defects.chalky.chalky_probability != null ? `${Math.round(defects.chalky.chalky_probability * 100)}%` : undefined,
       method: defects.chalky.method,
+      limitation: defects.chalky.limitation,
     },
     {
       title: 'Red Grain',
@@ -76,10 +81,19 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
     },
     {
       title: 'Sprouted / Weevilled',
-      status: defects.sprouted_weevilled.sprouted_weevilled_label === 'sprouted_weevilled' ? 'Yes' : 'No',
+      status: defects.sprouted_weevilled.sprouted_weevilled_label === 'sprouted_weevilled'
+        ? 'Yes'
+        : defects.sprouted_weevilled.sprouted_weevilled_label === 'normal'
+        ? 'No'
+        : 'Undetermined',
+      statusLabel: `Prediction: ${defects.sprouted_weevilled.sprouted_weevilled_label === 'sprouted_weevilled' ? 'Yes' : defects.sprouted_weevilled.sprouted_weevilled_label === 'normal' ? 'No' : 'Undetermined'}`,
       isDefect: defects.sprouted_weevilled.sprouted_weevilled_label === 'sprouted_weevilled',
-      confidence: defects.sprouted_weevilled.probability ? `${Math.round(defects.sprouted_weevilled.probability * 100)}%` : undefined,
+      confidence: (defects.sprouted_weevilled.confidence ?? defects.sprouted_weevilled.probability) != null
+        ? `${Math.round((defects.sprouted_weevilled.confidence ?? defects.sprouted_weevilled.probability) * 100)}%`
+        : undefined,
+      confidenceLabel: 'Confidence:',
       method: defects.sprouted_weevilled.method,
+      limitation: defects.sprouted_weevilled.limitation,
     },
   ];
 
@@ -92,25 +106,25 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
     : `${geometry.breadth_pixels} px`;
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+    <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
         <div>
-          <span className="text-xs uppercase font-semibold text-amber-400 tracking-wider">Per-Grain Inspector</span>
-          <h2 className="text-xl font-bold text-white">Grain #{grain.id}</h2>
+          <span className="text-xs uppercase font-semibold text-brand tracking-wider">Per-Grain Inspector</span>
+          <h2 className="text-xl font-bold text-text-primary">Grain #{grain.id}</h2>
         </div>
         <div className="flex items-center gap-2">
           <span
             className={`text-xs px-2.5 py-1 rounded-full font-medium border ${
               grain.segmentation_quality === 'good'
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                ? 'bg-success-bg text-success border-success/20'
+                : 'bg-warning-bg text-warning border-warning/20'
             }`}
           >
             Quality: {grain.segmentation_quality}
           </span>
           {grain.is_touching && (
-            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-error-bg text-error border border-error/20">
               Touching / Overlapping
             </span>
           )}
@@ -119,31 +133,31 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
 
       {/* Geometry Metrics Grid */}
       <div>
-        <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Geometric Measurements</h4>
+        <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider mb-2">Geometric Measurements</h4>
         <div className="grid grid-cols-3 gap-2 text-xs">
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">Length</span>
-            <span className="font-bold text-slate-100 text-sm">{lengthDisplay}</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">Length</span>
+            <span className="font-bold text-text-primary text-sm">{lengthDisplay}</span>
           </div>
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">Breadth</span>
-            <span className="font-bold text-slate-100 text-sm">{breadthDisplay}</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">Breadth</span>
+            <span className="font-bold text-text-primary text-sm">{breadthDisplay}</span>
           </div>
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">L/B Ratio</span>
-            <span className="font-bold text-amber-400 text-sm">{geometry.lb_ratio ?? 'N/A'}</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">L/B Ratio</span>
+            <span className="font-bold text-warning text-sm">{geometry.lb_ratio ?? 'N/A'}</span>
           </div>
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">Mask Area</span>
-            <span className="font-bold text-slate-100">{geometry.area_pixels} px</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">Mask Area</span>
+            <span className="font-bold text-text-primary">{geometry.area_pixels} px</span>
           </div>
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">Solidity</span>
-            <span className="font-bold text-slate-100">{geometry.solidity}</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">Solidity</span>
+            <span className="font-bold text-text-primary">{geometry.solidity}</span>
           </div>
-          <div className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/60">
-            <span className="text-slate-400 block text-[11px]">Confidence</span>
-            <span className="font-bold text-emerald-400">{Math.round(grain.confidence * 100)}%</span>
+          <div className="bg-surface-subtle p-2.5 rounded-lg border border-border">
+            <span className="text-text-muted block text-[11px]">Confidence</span>
+            <span className="font-bold text-success">{Math.round(grain.confidence * 100)}%</span>
           </div>
         </div>
       </div>
@@ -151,36 +165,36 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
       {/* Multi-Label Defect Classification */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Multi-Label Defect Analysis</h4>
-          <span className="text-[10px] text-slate-400">Can possess multiple defects simultaneously</span>
+          <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Multi-Label Defect Analysis</h4>
+          <span className="text-[10px] text-text-muted">Can possess multiple defects simultaneously</span>
         </div>
-        <div className="border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/60 text-xs">
+        <div className="border border-border rounded-xl overflow-hidden divide-y divide-border text-xs">
           {defectRows.map((row) => (
-            <div key={row.title} className="p-2.5 flex items-center justify-between hover:bg-slate-800/30 transition">
+            <div key={row.title} className="p-2.5 flex items-center justify-between hover:bg-surface-subtle transition">
               <div>
-                <span className="font-medium text-slate-200 block">{row.title}</span>
-                <span className="text-[10px] text-slate-400">{row.method}</span>
+                <span className="font-medium text-text-primary block">{row.title}</span>
+                <span className="text-[10px] text-text-muted">{row.method}</span>
                 {row.limitation && (
-                  <span className="text-[10px] text-amber-400/80 block mt-0.5">{row.limitation}</span>
+                  <span className="text-[10px] text-warning block mt-0.5">{row.limitation}</span>
                 )}
                 {row.note && (
-                  <span className="text-[10px] text-slate-400 block mt-0.5">{row.note}</span>
+                  <span className="text-[10px] text-text-muted block mt-0.5">{row.note}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {row.confidence && (
-                  <span className="text-[10px] text-slate-400 font-mono">{row.confidence}</span>
+                  <span className="text-[10px] text-text-muted font-mono">{row.confidenceLabel || 'Confidence:'} {row.confidence}</span>
                 )}
                 <span
                   className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                     row.status === 'Yes'
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      ? 'bg-error-bg text-error border border-error/30'
                       : row.status === 'No'
-                      ? 'bg-emerald-500/10 text-emerald-400'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-success-bg text-success border border-success/20'
+                      : 'bg-surface-subtle text-text-muted border border-border'
                   }`}
                 >
-                  {row.status}
+                  {row.statusLabel || row.status}
                 </span>
               </div>
             </div>
@@ -188,21 +202,21 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
         </div>
       </div>
 
-      {/* Sample-Level Parameters Distinction (Section 2 of tasks.txt) */}
-      <div className="p-3 bg-slate-800/40 border border-slate-800 rounded-xl text-xs space-y-2">
-        <span className="text-[11px] font-semibold text-slate-300 block">Sample-Level Parameters (Not Per-Grain):</span>
+      {/* Sample-Level Parameters Distinction */}
+      <div className="p-3 bg-surface-subtle border border-border rounded-xl text-xs space-y-2">
+        <span className="text-[11px] font-semibold text-text-primary block">Sample-Level Parameters (Not Per-Grain):</span>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-slate-900/60 p-2 rounded border border-slate-700/50">
-            <span className="text-[10px] text-slate-400 block">Foreign Matter</span>
-            <span className="text-[11px] font-medium text-amber-400">Sample-level parameter</span>
+          <div className="bg-surface p-2 rounded border border-border">
+            <span className="text-[10px] text-text-muted block">Foreign Matter</span>
+            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
           </div>
-          <div className="bg-slate-900/60 p-2 rounded border border-slate-700/50">
-            <span className="text-[10px] text-slate-400 block">Admixture</span>
-            <span className="text-[11px] font-medium text-amber-400">Sample-level parameter</span>
+          <div className="bg-surface p-2 rounded border border-border">
+            <span className="text-[10px] text-text-muted block">Admixture</span>
+            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
           </div>
-          <div className="bg-slate-900/60 p-2 rounded border border-slate-700/50">
-            <span className="text-[10px] text-slate-400 block">Total Count</span>
-            <span className="text-[11px] font-medium text-amber-400">Sample-level parameter</span>
+          <div className="bg-surface p-2 rounded border border-border">
+            <span className="text-[10px] text-text-muted block">Total Count</span>
+            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
           </div>
         </div>
       </div>

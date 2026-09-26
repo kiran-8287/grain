@@ -3,8 +3,43 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-primary: #285943;
+    --color-primary-hover: #1E4534;
+    --color-primary-light: #E8F0EA;
+    --color-secondary: #6F8F78;
+    --color-secondary-light: #E8F0EA;
+    --color-background: #F7F5EF;
+    --color-surface: #FFFFFF;
+    --color-surface-muted: #F2F5F2;
+    --color-text-primary: #26332B;
+    --color-text-secondary: #66736B;
+    --color-text-muted: #8A948E;
+    --color-border: #DCE4DE;
+    --color-border-dark: #B8C4BB;
+    --color-success: #3F7D58;
+    --color-success-bg: #EAF3ED;
+    --color-warning: #A97832;
+    --color-warning-bg: #F8F0E2;
+    --color-error: #B4534B;
+    --color-error-bg: #F8EAE8;
+    --color-info: #527A8A;
+    --color-info-bg: #EAF1F4;
+    --color-notrice-bg: #F8F0E2;
+    --color-notrice-border: #E5D5B7;
+    --color-notrice-text: #6F5427;
+    --color-grain-1: #2F6F5E;
+    --color-grain-2: #4C8C72;
+    --color-grain-3: #7A9E8A;
+    --color-grain-4: #8C7A55;
+    --color-grain-5: #6B8790;
+    --color-grain-6: #9A7560;
+  }
+
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #F7F5EF;
+    color: #26332B;
   }
 }
 
@@ -15,14 +50,24 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #F2F5F2;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #DCE4DE;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #B8C4BB;
+}
+
+/* Utility animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
 }

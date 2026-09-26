@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional
 
 from ml.pipeline import RiceQualityPipeline
 
+from backend.app.services.run_logger import log_run
+
 logger = logging.getLogger(__name__)
 
 STAGES = [
@@ -78,18 +80,33 @@ class JobManager:
             job["completed_at"] = time.time()
             job["result"] = result
             result["job_id"] = job_id
+
+            log_run(
+                input_bytes=image_bytes,
+                original_filename=filename,
+                result=result,
+                grade=grade,
+            )
+
             return result
         except Exception as e:
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             job["status"] = "failed"
             job["error"] = str(e)
             job["completed_at"] = time.time()
-            return {
+            error_result = {
                 "success": False,
                 "job_id": job_id,
                 "error": str(e),
                 "warnings": [str(e)],
             }
+            log_run(
+                input_bytes=image_bytes,
+                original_filename=filename,
+                result=error_result,
+                grade=grade,
+            )
+            return error_result
 
 
 # Global singleton

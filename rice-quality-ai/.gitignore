@@ -40,6 +40,7 @@ models/**/*.joblib
 data/raw/
 data/processed/
 data/downloads/
+data/runs/
 
 # Temporary files
 uploads/

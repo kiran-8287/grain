@@ -7,27 +7,34 @@ interface StandardsScreeningProps {
 }
 
 export const StandardsScreening: React.FC<StandardsScreeningProps> = ({ standards }) => {
-  const { screening, official_grade } = standards;
+  const { screening, official_grade, standard_reference } = standards;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'WITHIN REFERENCE LIMIT':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-success-bg text-success border border-success/20">
             <CheckCircle2 className="w-3 h-3" />
             Within Limit
           </span>
         );
       case 'EXCEEDS REFERENCE LIMIT':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-error-bg text-error border border-error/20">
             <XCircle className="w-3 h-3" />
             Exceeds Limit
           </span>
         );
+      case 'NOT DETERMINABLE':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-surface-subtle text-text-muted border border-border">
+            <HelpCircle className="w-3 h-3" />
+            Not determinable
+          </span>
+        );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-surface-subtle text-text-muted border border-border">
             <HelpCircle className="w-3 h-3" />
             Not Assessable
           </span>
@@ -36,19 +43,19 @@ export const StandardsScreening: React.FC<StandardsScreeningProps> = ({ standard
   };
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+    <div className="bg-surface border border-border rounded-2xl p-6 shadow-sm space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-border">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Official Standards Screening</span>
-            <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
-              Government of India KMS 2026-27
+            <span className="text-xs font-semibold text-brand uppercase tracking-wider">Official Standards Screening</span>
+            <span className="text-xs bg-brand-light text-brand border border-border px-2 py-0.5 rounded-full">
+              {standard_reference?.display_label || 'Reference standard; season not verified'}
             </span>
           </div>
-          <h3 className="text-lg font-bold text-white mt-1">Image-Based Standard Screening</h3>
-          <p className="text-xs text-slate-400">
-            Parameter-by-parameter screening against the Uniform Specification for Raw Rice (Kharif Marketing Season 2026-27).
+          <h3 className="text-lg font-bold text-text-primary mt-1">Image-Based Standard Screening</h3>
+          <p className="text-xs text-text-secondary">
+            Image-based observed fractions are compared with reference limits only; official weight-based compliance is not established.
           </p>
         </div>
       </div>
@@ -57,56 +64,47 @@ export const StandardsScreening: React.FC<StandardsScreeningProps> = ({ standard
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
-            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider">
+            <tr className="border-b border-border text-text-muted font-semibold uppercase text-[10px] tracking-wider">
               <th className="py-2.5 px-3">Quality Parameter</th>
               <th className="py-2.5 px-3">Observed Value</th>
-              <th className="py-2.5 px-3">KMS 2026-27 Limit</th>
+              <th className="py-2.5 px-3">Reference Limit</th>
               <th className="py-2.5 px-3">Status</th>
               <th className="py-2.5 px-3">Measurement Basis</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-border">
             {Object.entries(screening).map(([key, item]) => {
               const formattedName = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
               return (
-                <tr key={key} className="hover:bg-slate-800/30 transition">
-                  <td className="py-3 px-3 font-medium text-slate-200">{formattedName}</td>
-                  <td className="py-3 px-3 font-semibold text-white">{item.observed_value}</td>
-                  <td className="py-3 px-3 text-slate-300 font-mono">{item.reference_limit}</td>
+                <tr key={key} className="hover:bg-surface-subtle transition">
+                  <td className="py-3 px-3 font-medium text-text-primary">{formattedName}</td>
+                  <td className="py-3 px-3 font-semibold text-text-primary">{item.observed_value}</td>
+                  <td className="py-3 px-3 text-text-secondary font-mono">{item.reference_limit}</td>
                   <td className="py-3 px-3">{getStatusBadge(item.status)}</td>
-                  <td className="py-3 px-3 text-[11px] text-slate-400">{item.basis}</td>
+                  <td className="py-3 px-3 text-[11px] text-text-muted">{item.basis}</td>
                 </tr>
               );
             })}
 
-            {/* Moisture Row (Explicit Non-Measurement, Section 26 of tasks.txt) */}
-            <tr className="hover:bg-slate-800/30 transition bg-slate-800/20">
-              <td className="py-3 px-3 font-medium text-slate-300">Moisture Content</td>
-              <td className="py-3 px-3 text-slate-400 italic">Not measurable from this image</td>
-              <td className="py-3 px-3 text-slate-400 font-mono">14.0% max</td>
-              <td className="py-3 px-3">{getStatusBadge('NOT ASSESSABLE')}</td>
-              <td className="py-3 px-3 text-[11px] text-slate-400">
-                Moisture requires an appropriate physical/laboratory measurement and is outside the current image-only pipeline.
-              </td>
-            </tr>
+
           </tbody>
         </table>
       </div>
 
-      {/* Section 24: Formal Official Grade Status (Honest about limitations) */}
-      <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-2">
+      {/* Section 24: Formal Official Grade Status */}
+      <div className="bg-surface-subtle border border-border rounded-xl p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-amber-400" />
-          <h4 className="text-sm font-bold text-white">Formal Official Grade Status</h4>
+          <ShieldCheck className="w-5 h-5 text-brand" />
+          <h4 className="text-sm font-bold text-text-primary">Formal Official Grade Status</h4>
         </div>
-        <p className="text-xs text-amber-200/90 font-medium">
+        <p className="text-xs text-text-secondary font-medium">
           {official_grade.status}
         </p>
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs text-text-secondary leading-relaxed">
           {official_grade.reason}
         </p>
         {official_grade.disclaimer && (
-          <p className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 italic">
+          <p className="text-[11px] text-text-muted border-t border-border pt-2 italic">
             Note: {official_grade.disclaimer}
           </p>
         )}

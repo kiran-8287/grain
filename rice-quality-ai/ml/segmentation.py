@@ -139,7 +139,11 @@ def extract_foreground_mask(
     
     # Check for blank / zero-variance image
     if int(np.max(gray)) == int(np.min(gray)) or float(np.std(gray)) < 1.0:
-        return np.zeros((h, w), dtype=np.uint8), True, {"is_blank": True}
+        return (
+            np.zeros((h, w), dtype=np.uint8),
+            True,
+            {"is_blank": True, "bg_gray": round(float(np.median(gray)), 2)},
+        )
         
     margin = max(3, min(h, w) // 50)
     border_pixels = np.concatenate([
@@ -181,6 +185,8 @@ def extract_foreground_mask(
         "dark_border_frac": round(dark_border_frac, 3),
         "is_dark_bg": is_dark_bg,
         "fg_ratio": round(float(np.sum(binary > 0) / (h * w)), 4),
+        # Median border intensity — used by the rice gate as the background reference.
+        "bg_gray": round(float(np.median(border_pixels)), 2),
     }
     return binary, is_dark_bg, meta
 
@@ -373,85 +379,21 @@ def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
 
 def detect_rice_presence(image_rgb: np.ndarray) -> Dict:
     """
-    Determine if the image contains rice grains.
-    
-    This is the first semantic question: "Does this image contain rice grains?"
-    
-    Uses a combination of:
-    - Colour analysis (rice-like colours)
-    - Shape analysis (elongated small objects)
-    - Texture analysis
-    
-    Returns confidence and recommendation.
+    Decide whether the image contains RICE grains (Case 1 rice-presence gate).
+
+    Delegates to ml.rice_gate.evaluate_rice_presence — the single central decision
+    point — so that "objects were detected" is never confused with "rice was
+    detected". Only detections whose class is the model configuration's rice class
+    (models/segmentation/class_mapping.json -> class_id 1 "rice_grain") whose
+    confidence passes rice_gate.rice_confidence_threshold count as rice; every
+    other object keeps the project's foreign-matter class vocabulary.
+
+    The public signature and the legacy summary keys are preserved for existing
+    callers (`has_rice`, `confidence`, `estimated_grain_count`,
+    `total_objects_detected`, `message`, `method`).
     """
-    h, w = image_rgb.shape[:2]
-    
-    # Extract foreground mask using robust background detection
-    binary_final, is_dark_bg, meta = extract_foreground_mask(image_rgb)
-    if meta.get("is_blank", False) or np.sum(binary_final > 0) == 0:
-        return {
-            "has_rice": False,
-            "confidence": 0.05,
-            "estimated_grain_count": 0,
-            "total_objects_detected": 0,
-            "message": "No rice grains detected. Please upload an image containing rice grains.",
-            "method": "classical_cv_shape_analysis",
-        }
-    
-    # Find contours
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    cleaned = cv2.morphologyEx(binary_final, cv2.MORPH_OPEN, kernel, iterations=1)
-    contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter for grain-like objects
-    grain_like_count = 0
-    total_objects = len(contours)
-    
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if area < 30:
-            continue
-        
-        # Use minAreaRect to be orientation-independent
-        if len(cnt) >= 5:
-            (_, (rw, rh), _) = cv2.minAreaRect(cnt)
-            aspect = max(rw, rh) / (min(rw, rh) + 1e-6)
-        else:
-            x, y, cw, ch = cv2.boundingRect(cnt)
-            aspect = max(cw, ch) / (min(cw, ch) + 1e-6)
-        
-        # Rice grains are typically elongated (aspect ratio 1.2 to 8.0)
-        # and have moderate to high solidity (broken grains may have lower aspect ratio)
-        hull = cv2.convexHull(cnt)
-        hull_area = cv2.contourArea(hull)
-        solidity = area / hull_area if hull_area > 0 else 0
-        
-        if 1.15 <= aspect <= 8.5 and solidity >= 0.55 and area >= 40:
-            grain_like_count += 1
-    
-    # Confidence based on grain-like objects found
-    if grain_like_count == 0:
-        confidence = 0.05
-        has_rice = False
-        message = "No rice grains detected. Please upload an image containing rice grains."
-    elif grain_like_count == 1:
-        confidence = 0.85
-        has_rice = True
-        message = "Detected 1 rice grain."
-    elif grain_like_count < 5:
-        confidence = 0.90
-        has_rice = True
-        message = f"Detected {grain_like_count} potential rice grain(s)."
-    else:
-        confidence = 0.95
-        has_rice = True
-        message = f"Detected approximately {grain_like_count} potential rice grain(s)."
-    
-    return {
-        "has_rice": has_rice,
-        "confidence": round(confidence, 4),
-        "estimated_grain_count": grain_like_count,
-        "total_objects_detected": total_objects,
-        "message": message,
-        "method": "classical_cv_shape_analysis",
-    }
+    # Imported lazily: ml.rice_gate re-uses extract_foreground_mask from this
+    # module, so a module-level import would be circular.
+    from ml.rice_gate import evaluate_rice_presence
+
+    return evaluate_rice_presence(image_rgb)

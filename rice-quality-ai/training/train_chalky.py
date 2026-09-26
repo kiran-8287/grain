@@ -9,7 +9,7 @@ Saves model, scaler, feature schema, class labels, and metadata to models/chalky
 
 import json
 import logging
-import os
+import csv
 import sys
 from pathlib import Path
 
@@ -19,7 +19,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import joblib
+import cv2
 import numpy as np
+from sklearn.metrics import brier_score_loss
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -30,8 +32,9 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
+from ml.texture import extract_chalky_features
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -104,93 +107,133 @@ def generate_synthetic_chalky_data(n_samples: int = 500, random_state: int = 42)
     return X, y
 
 
+def _load_chalky_manifest(data_dir: Path):
+    manifest_path = data_dir / "manifest.csv"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Missing {manifest_path}. Supply real labeled grain images and masks; "
+            "synthetic feature vectors are not accepted for model training."
+        )
+
+    label_ids = {"clean": 0, "normal": 0, "not_chalky": 0, "chalky": 1}
+    feature_rows, labels, source_groups = [], [], []
+    with manifest_path.open(newline="", encoding="utf-8") as manifest_file:
+        rows = csv.DictReader(manifest_file)
+        required = {"image_path", "mask_path", "label", "source_group"}
+        if not rows.fieldnames or not required.issubset(rows.fieldnames):
+            raise ValueError(
+                "Chalky manifest requires image_path, mask_path, label, source_group columns"
+            )
+        for row in rows:
+            label_name = row["label"].strip().lower()
+            if label_name not in label_ids or not row["source_group"].strip():
+                raise ValueError(f"Invalid chalky label or source_group in row: {row}")
+            image_path = (data_dir / row["image_path"]).resolve()
+            mask_path = (data_dir / row["mask_path"]).resolve()
+            image_bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            if image_bgr is None or mask is None or image_bgr.shape[:2] != mask.shape:
+                raise ValueError(f"Could not load matching image/mask pair: {image_path}")
+            features = extract_chalky_features(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB), mask)
+            feature_rows.append([features[name] for name in FEATURE_NAMES])
+            labels.append(label_ids[label_name])
+            source_groups.append(row["source_group"].strip())
+
+    if not feature_rows or set(labels) != {0, 1}:
+        raise ValueError("The real chalky dataset must contain both clean and chalky grains")
+    return np.asarray(feature_rows, dtype=float), np.asarray(labels), np.asarray(source_groups)
+
+
+def _group_split(X, y, groups, test_size, seed):
+    for random_state in range(seed, seed + 100):
+        train_indices, test_indices = next(
+            GroupShuffleSplit(
+                n_splits=1, test_size=test_size, random_state=random_state
+            ).split(X, y, groups)
+        )
+        if set(y[train_indices]) == {0, 1} and set(y[test_indices]) == {0, 1}:
+            return train_indices, test_indices
+    raise ValueError(
+        "Cannot create group-disjoint train/validation/test splits containing both "
+        "classes. Add more independent clean and chalky source groups."
+    )
+
+
+def _select_threshold(y_true, probabilities):
+    candidates = np.unique(np.concatenate(([0.0], probabilities, [1.0])))
+    scored = [
+        (f1_score(y_true, probabilities >= threshold, zero_division=0), threshold)
+        for threshold in candidates
+    ]
+    return float(max(scored, key=lambda item: (item[0], item[1]))[1])
+
+
+def _evaluate(y_true, probabilities, threshold):
+    predictions = probabilities >= threshold
+    matrix = confusion_matrix(y_true, predictions, labels=[0, 1])
+    true_clean = int(matrix[0].sum())
+    return {
+        "accuracy": float(accuracy_score(y_true, predictions)),
+        "precision": float(precision_score(y_true, predictions, zero_division=0)),
+        "recall": float(recall_score(y_true, predictions, zero_division=0)),
+        "f1_score": float(f1_score(y_true, predictions, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y_true, probabilities)),
+        "clean_false_positive_rate": float(matrix[0, 1] / true_clean) if true_clean else None,
+        "brier_score": float(brier_score_loss(y_true, probabilities)),
+        "confusion_matrix": matrix.tolist(),
+    }
+
+
 def train_chalky_model(data_dir: Path = None):
-    """Train and evaluate the Logistic Regression model for chalky rice."""
+    """Train from real labeled grains, keeping source images in a single split."""
+    data_dir = Path(data_dir) if data_dir else PROJECT_ROOT / "data" / "processed" / "chalky"
+    X, y, groups = _load_chalky_manifest(data_dir)
+
+    train_val_indices, test_indices = _group_split(X, y, groups, 0.15, 42)
+    train_indices, val_indices = _group_split(
+        X[train_val_indices], y[train_val_indices], groups[train_val_indices], 0.1765, 142
+    )
+    train_indices = train_val_indices[train_indices]
+    val_indices = train_val_indices[val_indices]
+    if set(y[train_indices]) != {0, 1} or set(y[val_indices]) != {0, 1}:
+        raise ValueError("Train and validation splits must each contain clean and chalky grains")
+
+    scaler = StandardScaler().fit(X[train_indices])
+    classifier = LogisticRegression(class_weight="balanced", random_state=42, max_iter=1000)
+    classifier.fit(scaler.transform(X[train_indices]), y[train_indices])
+    val_probabilities = classifier.predict_proba(scaler.transform(X[val_indices]))[:, 1]
+    threshold = _select_threshold(y[val_indices], val_probabilities)
+    test_probabilities = classifier.predict_proba(scaler.transform(X[test_indices]))[:, 1]
+    test_metrics = _evaluate(y[test_indices], test_probabilities, threshold)
+    validation_metrics = _evaluate(y[val_indices], val_probabilities, threshold)
+
     out_dir = PROJECT_ROOT / "models" / "chalky"
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info("Preparing data for Chalky Logistic Regression training...")
-    # Generate synthetic training samples based on validated feature distribution
-    X, y = generate_synthetic_chalky_data(n_samples=600, random_state=42)
-
-    # Train / Test split (70% train, 15% val, 15% test)
-    X_train_full, X_test, y_train_full, y_test = train_test_split(
-        X, y, test_size=0.15, random_state=42, stratify=y
-    )
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_train_full, y_train_full, test_size=0.1765, random_state=42, stratify=y_train_full
-    )
-
-    logger.info(f"Dataset split: Train={len(X_train)}, Val={len(X_val)}, Test={len(X_test)}")
-
-    # Scaler
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
-
-    # Model training with class balancing
-    clf = LogisticRegression(class_weight="balanced", random_state=42, max_iter=1000)
-    clf.fit(X_train_scaled, y_train)
-
-    # Evaluation on Test set
-    y_pred = clf.predict(X_test_scaled)
-    y_prob = clf.predict_proba(X_test_scaled)[:, 1]
-
-    acc = float(accuracy_score(y_test, y_pred))
-    prec = float(precision_score(y_test, y_pred))
-    rec = float(recall_score(y_test, y_pred))
-    f1 = float(f1_score(y_test, y_pred))
-    roc_auc = float(roc_auc_score(y_test, y_prob))
-    cm = confusion_matrix(y_test, y_pred).tolist()
-
-    logger.info(f"Evaluation Results (Test Set):")
-    logger.info(f"  Accuracy:  {acc:.4f}")
-    logger.info(f"  Precision: {prec:.4f}")
-    logger.info(f"  Recall:    {rec:.4f}")
-    logger.info(f"  F1 Score:  {f1:.4f}")
-    logger.info(f"  ROC-AUC:   {roc_auc:.4f}")
-    logger.info(f"  Confusion Matrix: {cm}")
-
-    # Save artifacts
-    model_path = out_dir / "model.joblib"
-    scaler_path = out_dir / "scaler.joblib"
-    schema_path = out_dir / "feature_schema.json"
-    metadata_path = out_dir / "metadata.json"
-
-    joblib.dump(clf, model_path)
-    joblib.dump(scaler, scaler_path)
-
-    feature_schema = {
-        "features": FEATURE_NAMES,
-        "n_features": len(FEATURE_NAMES),
-        "scaling": "StandardScaler",
-    }
-    with open(schema_path, "w") as f:
-        json.dump(feature_schema, f, indent=2)
+    joblib.dump(classifier, out_dir / "model.joblib")
+    joblib.dump(scaler, out_dir / "scaler.joblib")
+    with (out_dir / "feature_schema.json").open("w", encoding="utf-8") as schema_file:
+        json.dump({"features": FEATURE_NAMES, "n_features": len(FEATURE_NAMES), "scaling": "StandardScaler", "mask_usage": "instance-mask-only GLCM and color features"}, schema_file, indent=2)
 
     metadata = {
         "model_name": "chalky_logistic_regression",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "algorithm": "LogisticRegression(class_weight='balanced')",
         "classes": {"0": "normal", "1": "chalky"},
-        "train_samples": len(X_train),
-        "val_samples": len(X_val),
-        "test_samples": len(X_test),
-        "metrics": {
-            "accuracy": round(acc, 4),
-            "precision": round(prec, 4),
-            "recall": round(rec, 4),
-            "f1_score": round(f1, 4),
-            "roc_auc": round(roc_auc, 4),
-            "confusion_matrix": cm,
-        },
+        "dataset": str(data_dir),
+        "source_group_split": True,
+        "train_samples": int(len(train_indices)),
+        "validation_samples": int(len(val_indices)),
+        "test_samples": int(len(test_indices)),
+        "decision_threshold": threshold,
+        "threshold_source": "validation F1; independent source-group split",
+        "validation_metrics": validation_metrics,
+        "metrics": test_metrics,
+        "probability_calibration": "Raw Logistic Regression scores; calibration not established.",
         "status": "trained",
     }
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    logger.info(f"Saved chalky model artifacts to {out_dir}")
+    with (out_dir / "metadata.json").open("w", encoding="utf-8") as metadata_file:
+        json.dump(metadata, metadata_file, indent=2)
+    logger.info("Chalky test metrics: %s", test_metrics)
     return metadata
 
 

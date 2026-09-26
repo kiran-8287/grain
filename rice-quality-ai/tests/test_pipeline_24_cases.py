@@ -347,3 +347,87 @@ def test_case_24_huge_sample(pipeline):
     assert res["success"] is True
     assert res["sample"]["analysed"] >= 40
     assert res["processing_time_seconds"] < 10.0  # Runs fast
+
+
+# 25. Exactly 14 parameters — no moisture
+def test_case_25_exactly_14_parameters_no_moisture(pipeline):
+    img_bytes = create_synthetic_rice_image(num_grains=10, img_size=500)
+    res = pipeline.analyze(img_bytes)
+    assert res["success"] is True
+    assert res["rice_detected"] is True
+
+    standards = res.get("standards", {})
+    screening = standards.get("screening", {})
+
+    assert "moisture" not in screening, "Moisture must not appear in screening output"
+    assert len(screening) == 8, f"Expected 8 screened parameters, got {len(screening)}"
+
+    expected_keys = {
+        "broken",
+        "damaged_slightly_damaged",
+        "discoloured",
+        "chalky",
+        "red",
+        "dehusked",
+        "foreign_matter",
+        "admixture_of_lower_class",
+    }
+    assert set(screening.keys()) == expected_keys
+
+    for key in screening:
+        assert "moisture" not in key.lower()
+        assert "moisture" not in str(screening[key]).lower()
+
+
+# 26. No moisture in official grade reasons
+def test_case_26_no_moisture_in_official_grade_reasons(pipeline):
+    img_bytes = create_synthetic_rice_image(num_grains=10, img_size=500)
+    res = pipeline.analyze(img_bytes)
+    assert res["success"] is True
+
+    official_grade = res.get("standards", {}).get("official_grade", {})
+    reasons = " ".join(official_grade.get("reasons", [])).lower()
+    assert "moisture" not in reasons
+
+
+# 27. Frontend type safety — no moisture in 14-parameter summary
+def test_case_27_summary_has_14_parameters_no_moisture(pipeline):
+    img_bytes = create_synthetic_rice_image(num_grains=10, img_size=500)
+    res = pipeline.analyze(img_bytes)
+    assert res["success"] is True
+
+    summary = res.get("summary", {})
+    expected_params = [
+        "total_rice_grains",
+        "broken_percent",
+        "damaged_percent",
+        "discoloured_percent",
+        "chalky_percent",
+        "red_percent",
+        "dehusked_percent",
+        "immature_percent",
+        "sprouted_percent",
+        "foreign_matter_count",
+        "admixture_percentage",
+        "average_length",
+        "average_breadth",
+        "average_lb_ratio",
+    ]
+    for param in expected_params:
+        assert param in summary, f"Missing parameter: {param}"
+
+    assert "moisture_percent" not in summary
+    assert "moisture" not in " ".join(str(v) for v in summary.values()).lower()
+
+
+# 28. Case 1 (no rice) remains unchanged
+def test_case_28_no_rice_case1_unchanged(pipeline):
+    img = np.zeros((300, 300, 3), dtype=np.uint8)
+    _, enc = cv2.imencode(".jpg", img)
+    res = pipeline.analyze(enc.tobytes())
+    assert res["success"] is True
+    assert res["rice_detected"] is False
+    assert res["message"] == "No rice grains detected. Please upload an image containing rice grains."
+    assert res["grains"] == []
+    assert res["summary"] == {}
+    assert res["standards"]["status"].startswith("Not evaluated")

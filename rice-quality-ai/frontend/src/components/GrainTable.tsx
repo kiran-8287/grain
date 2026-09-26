@@ -15,18 +15,18 @@ export const GrainTable: React.FC<GrainTableProps> = ({
   unit,
 }) => {
   return (
-    <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-3">
+    <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Per-Grain Table</span>
-          <h3 className="text-base font-bold text-white">Grain Population Overview</h3>
+          <span className="text-xs font-semibold text-brand uppercase tracking-wider">Per-Grain Table</span>
+          <h3 className="text-base font-bold text-text-primary">Grain Population Overview</h3>
         </div>
-        <span className="text-xs text-slate-400">{grains.length} accepted instances</span>
+        <span className="text-xs text-text-muted">{grains.length} accepted instances</span>
       </div>
 
-      <div className="overflow-x-auto max-h-72 overflow-y-auto border border-slate-800 rounded-xl">
+      <div className="overflow-x-auto max-h-72 overflow-y-auto border border-border rounded-xl">
         <table className="w-full text-left text-xs border-collapse">
-          <thead className="sticky top-0 bg-slate-800 text-slate-300 font-semibold uppercase text-[10px] tracking-wider z-10">
+          <thead className="sticky top-0 bg-surface-subtle text-text-secondary font-semibold uppercase text-[10px] tracking-wider z-10">
             <tr>
               <th className="py-2 px-3">Grain #</th>
               <th className="py-2 px-3">Length ({unit})</th>
@@ -38,7 +38,7 @@ export const GrainTable: React.FC<GrainTableProps> = ({
               <th className="py-2 px-3">Quality</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-border">
             {grains.map((g) => {
               const isSelected = g.id === selectedGrainId;
               const len = g.geometry.length_mm !== null && g.geometry.length_mm !== undefined
@@ -54,22 +54,22 @@ export const GrainTable: React.FC<GrainTableProps> = ({
                   onClick={() => onSelectGrain(g.id)}
                   className={`cursor-pointer transition ${
                     isSelected
-                      ? 'bg-amber-500/10 border-l-4 border-amber-400'
-                      : 'hover:bg-slate-800/40'
+                      ? 'bg-brand-light border-l-4 border-brand'
+                      : 'hover:bg-surface-subtle'
                   }`}
                 >
-                  <td className="py-2.5 px-3 font-semibold text-white">#{g.id}</td>
-                  <td className="py-2.5 px-3 font-mono text-slate-300">{len}</td>
-                  <td className="py-2.5 px-3 font-mono text-slate-300">{brd}</td>
-                  <td className="py-2.5 px-3 font-mono text-amber-400 font-medium">
+                  <td className="py-2.5 px-3 font-semibold text-text-primary">#{g.id}</td>
+                  <td className="py-2.5 px-3 font-mono text-text-secondary">{len}</td>
+                  <td className="py-2.5 px-3 font-mono text-text-secondary">{brd}</td>
+                  <td className="py-2.5 px-3 font-mono text-brand font-medium">
                     {g.geometry.lb_ratio ?? 'N/A'}
                   </td>
                   <td className="py-2.5 px-3">
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         g.defects.broken.broken_label === 'broken'
-                          ? 'bg-rose-500/20 text-rose-300'
-                          : 'bg-emerald-500/10 text-emerald-400'
+                          ? 'bg-error-bg text-error'
+                          : 'bg-success-bg text-success'
                       }`}
                     >
                       {g.defects.broken.broken_label}
@@ -79,8 +79,8 @@ export const GrainTable: React.FC<GrainTableProps> = ({
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         g.defects.damaged.damaged_label === 'damaged'
-                          ? 'bg-rose-500/20 text-rose-300'
-                          : 'bg-slate-800 text-slate-400'
+                          ? 'bg-error-bg text-error'
+                          : 'bg-surface-subtle text-text-muted border border-border'
                       }`}
                     >
                       {g.defects.damaged.damaged_label}
@@ -90,14 +90,14 @@ export const GrainTable: React.FC<GrainTableProps> = ({
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                         g.defects.chalky.chalky_label === 'chalky'
-                          ? 'bg-amber-500/20 text-amber-300'
-                          : 'bg-slate-800 text-slate-400'
+                          ? 'bg-warning-bg text-warning'
+                          : 'bg-surface-subtle text-text-muted border border-border'
                       }`}
                     >
                       {g.defects.chalky.chalky_label}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 text-slate-400 text-[11px] capitalize">
+                  <td className="py-2.5 px-3 text-text-muted text-[11px] capitalize">
                     {g.segmentation_quality}
                   </td>
                 </tr>

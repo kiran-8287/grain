@@ -1,0 +1,47 @@
+{
+  "model_name": "rice_gate_logistic_regression",
+  "version": "1.0.0",
+  "algorithm": "LogisticRegression(class_weight='balanced')",
+  "train_samples": 1679,
+  "val_samples": 361,
+  "test_samples": 360,
+  "features": [
+    "mean_l_star",
+    "chroma",
+    "aspect_ratio",
+    "surface_roughness",
+    "mean_gray",
+    "background_gap_ratio"
+  ],
+  "classes": {
+    "0": "non_rice",
+    "1": "rice"
+  },
+  "metrics": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "false_positive_rate_non_rice": 0.0,
+    "confusion_matrix": [
+      [
+        180,
+        0
+      ],
+      [
+        0,
+        180
+      ]
+    ]
+  },
+  "status": "trained",
+  "hard_negatives": [
+    "stone",
+    "pebble",
+    "dirt",
+    "sand",
+    "leaf",
+    "plastic",
+    "other_seed"
+  ]
+}

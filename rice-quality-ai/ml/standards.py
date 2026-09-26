@@ -1,8 +1,8 @@
 """
 Standards comparison engine.
 
-Compares image-derived measurements against the official
-India KMS 2026-27 raw rice standard.
+Compares image-derived measurements against configured historical/reference
+raw rice limits without asserting current-season verification.
 
 Creates TWO separate outputs:
 A. Image-based standard screening (parameter-by-parameter comparison)
@@ -24,6 +24,8 @@ def compare_with_standards(
     total_count: int,
     calibration_mode: str = "none",
     grade: str = "grade_a",
+    quality_tier: Optional[str] = None,
+    minimum_sample_size: int = 30,
 ) -> Dict:
     """
     Compare image-derived measurements with official standards.
@@ -57,31 +59,57 @@ def compare_with_standards(
     warnings = []
     
     param_mappings = [
-        ("broken", "broken_percent", "broken"),
-        ("damaged_slightly_damaged", "damaged_percent", "damaged_slightly_damaged"),
-        ("discoloured", "discoloured_percent", "discoloured"),
-        ("chalky", "chalky_percent", "chalky"),
-        ("red", "red_percent", "red"),
-        ("dehusked", "dehusked_percent", "dehusked"),
-        ("foreign_matter", "foreign_matter_percent", "foreign_matter"),
-        ("admixture_of_lower_class", "admixture_percent", "admixture_of_lower_class"),
+        ("broken", "broken_percent", "broken", "broken_count", "broken_analyzed_count"),
+        ("damaged_slightly_damaged", "damaged_percent", "damaged_slightly_damaged", "damaged_count", "damaged_analyzed_count"),
+        ("discoloured", "discoloured_percent", "discoloured", "discoloured_count", "discoloured_analyzed_count"),
+        ("chalky", "chalky_percent", "chalky", "chalky_count", "chalky_analyzed_count"),
+        ("red", "red_percent", "red", "red_count", "red_analyzed_count"),
+        ("dehusked", "dehusked_percent", "dehusked", "dehusked_count", "dehusked_analyzed_count"),
+        ("foreign_matter", "foreign_matter_percent", "foreign_matter", "foreign_matter_count", "foreign_matter_analyzed_count"),
+        ("admixture_of_lower_class", "admixture_percent", "admixture_of_lower_class", "admixture_count", "admixture_analyzed_count"),
     ]
-    
-    for param_key, stat_key, assessment_key in param_mappings:
+
+    sample_too_small = total_count < minimum_sample_size
+    quality_unreliable = quality_tier in ("POOR", "UNRELIABLE")
+
+    for param_key, stat_key, assessment_key, count_key, analyzed_key in param_mappings:
         limit_info = grade_limits.get(param_key, {})
         max_percent = limit_info.get("max_percent")
         basis = limit_info.get("basis", "weight")
         
         observed = sample_stats.get(stat_key)
+        detected_count = int(sample_stats.get(count_key, 0) or 0)
+        analyzed_count = int(
+            sample_stats.get(analyzed_key, total_count)
+            or 0
+        )
+        observed_fraction = (
+            round(detected_count / analyzed_count, 4) if analyzed_count else None
+        )
         assess_info = assessment_map.get(assessment_key, {})
         image_assessable = assess_info.get("image_assessable", False)
         limitation = assess_info.get("limitation", "")
         
-        if observed is None or not image_assessable:
+        if not image_assessable:
             status = "NOT ASSESSABLE"
             difference = None
         elif max_percent is None:
             status = "NOT APPLICABLE"
+            difference = None
+        elif sample_too_small or quality_unreliable:
+            status = "NOT DETERMINABLE"
+            difference = None
+            if sample_too_small:
+                limitation = (
+                    f"Only {total_count} grains were analyzed; at least "
+                    f"{minimum_sample_size} are required for image-level screening."
+                )
+            if quality_unreliable:
+                limitation = (
+                    f"Image quality is {quality_tier}; reliable compliance screening is suppressed."
+                )
+        elif observed is None:
+            status = "NOT ASSESSABLE"
             difference = None
         elif observed <= max_percent:
             status = "WITHIN REFERENCE LIMIT"
@@ -92,24 +120,25 @@ def compare_with_standards(
         
         screening[param_key] = {
             "observed_percent": round(observed, 2) if observed is not None else None,
+            "detected_count": detected_count,
+            "analyzed_count": analyzed_count,
+            "observed_fraction": observed_fraction,
+            "observed_value": (
+                f"{detected_count} / {analyzed_count} "
+                f"({observed * 1.0:.2f}%)"
+                if observed is not None and analyzed_count
+                else f"{detected_count} / {analyzed_count} (not measurable)"
+            ),
             "reference_limit_percent": max_percent,
+            "reference_limit": f"{max_percent}% max" if max_percent is not None else "N/A",
             "official_basis": basis,
             "image_basis": assess_info.get("image_basis", "count"),
+            "basis": assess_info.get("image_basis", "count"),
             "status": status,
             "difference": difference,
             "limitation": limitation,
             "note": "Image-based screening; not an official laboratory test.",
         }
-    
-    # Moisture — explicitly NOT measurable
-    screening["moisture"] = {
-        "observed_percent": None,
-        "reference_limit_percent": grade_limits.get("moisture", {}).get("max_percent", 14.0),
-        "status": "NOT ASSESSABLE",
-        "limitation": "Moisture requires an appropriate physical/laboratory measurement "
-                     "and is outside the current image-only pipeline.",
-        "note": "Not measurable from this image.",
-    }
     
     # B. Formal official grade status
     assessable_params = [s for s in screening.values() 
@@ -118,13 +147,18 @@ def compare_with_standards(
     
     reasons_cannot_grade = [
         "Laboratory/weight-based requirements cannot be verified from image alone.",
-        "Moisture not measured (requires physical instrument).",
         "Official dehusked test requires chemical staining — not reproduced by image analysis.",
     ]
     
-    if total_count < 30:
+    if sample_too_small:
         reasons_cannot_grade.append(
-            f"Small sample size ({total_count} grains) — not representative of a larger lot."
+            f"Small sample size ({total_count} grains) — at least "
+            f"{minimum_sample_size} grains are required for image-level screening."
+        )
+
+    if quality_unreliable:
+        reasons_cannot_grade.append(
+            f"Image quality is {quality_tier}; reliable official compliance conclusions are suppressed."
         )
     
     if calibration_mode == "none":
@@ -132,7 +166,9 @@ def compare_with_standards(
             "No metric calibration — length/breadth measurements are in pixels."
         )
     
-    if not exceeding and assessable_params:
+    if sample_too_small or quality_unreliable:
+        image_verdict = "Not determinable from this sample"
+    elif not exceeding and assessable_params:
         image_verdict = "Meets image-assessable reference limits"
     elif exceeding:
         image_verdict = "Exceeds one or more image-assessable reference limits"
@@ -141,10 +177,17 @@ def compare_with_standards(
     
     official_grade = {
         "formal_grade_determined": False,
+        "status": (
+            "Not determinable from this sample"
+            if sample_too_small or quality_unreliable
+            else "Formal grade not determined"
+        ),
         "message": "Formal Grade A/Common determination is not established from this image alone.",
+        "reason": " ".join(reasons_cannot_grade),
         "reasons": reasons_cannot_grade,
         "image_screening_verdict": image_verdict,
         "exceeding_parameters": exceeding,
+        "disclaimer": "Observed image fractions are not official weight-based measurements.",
         "note": "This is NOT a government certification. "
                 "Image-based analysis provides screening estimates only.",
     }
@@ -158,6 +201,8 @@ def compare_with_standards(
         "standard_reference": {
             "source": standards.get("_metadata", {}).get("source_title", ""),
             "season": standards.get("_metadata", {}).get("season", ""),
+            "display_label": standards.get("_metadata", {}).get("display_label", "Reference standard"),
+            "verification_status": standards.get("_metadata", {}).get("verification_status", "unverified"),
             "grade_profile": grade,
         },
         "footnotes": footnotes,

@@ -11,6 +11,8 @@ Each classifier clearly labels its method and limitations.
 """
 
 import logging
+import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +20,7 @@ import cv2
 import numpy as np
 
 from ml.config import get_model_info, get_project_root, get_threshold
-from ml.preprocessing import pad_to_square
+from ml.preprocessing import masked_grain_square_crop, pad_to_square
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +277,69 @@ def batch_classify_damaged(
 # SPROUTED / WEEVILLED
 # ============================================================
 
+def _load_sprouted_class_mapping(model_path: Path) -> Dict[str, str]:
+    """Load and log the class mapping stored alongside the checkpoint."""
+    mapping_path = model_path.parent / "class_mapping.json"
+    with mapping_path.open(encoding="utf-8") as mapping_file:
+        mapping = json.load(mapping_file)
+    if not isinstance(mapping, dict) or not mapping:
+        raise ValueError("Sprouted/weevilled class mapping is empty or invalid")
+
+    metadata_path = model_path.parent / "metadata.json"
+    if metadata_path.exists():
+        with metadata_path.open(encoding="utf-8") as metadata_file:
+            metadata_mapping = json.load(metadata_file).get("classes")
+        if metadata_mapping and metadata_mapping != mapping:
+            raise ValueError("Checkpoint class mapping disagrees with model metadata")
+
+    logger.info("Sprouted/weevilled checkpoint class mapping: %s", mapping)
+    return {str(class_id): str(class_name) for class_id, class_name in mapping.items()}
+
+
+def _normalize_sprouted_class(class_name: str) -> Optional[str]:
+    normalized = re.sub(r"[^a-z0-9]+", "_", class_name.strip().lower()).strip("_")
+    if normalized in {"normal", "no", "clean", "not_sprouted", "not_weevilled"}:
+        return "normal"
+    if normalized in {
+        "sprouted_weevilled", "sprouted", "weevilled", "yes", "positive"
+    }:
+        return "sprouted_weevilled"
+    return None
+
+
+def _sprouted_decision_threshold(model_path: Path) -> float:
+    metadata_path = model_path.parent / "metadata.json"
+    if not metadata_path.exists():
+        return 0.5
+    with metadata_path.open(encoding="utf-8") as metadata_file:
+        threshold = json.load(metadata_file).get("decision_threshold", 0.5)
+    threshold = float(threshold)
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("Sprouted/weevilled decision threshold must be between 0 and 1")
+    return threshold
+
+
+def _choose_sprouted_class(probabilities, class_mapping, threshold):
+    positive_ids = [
+        int(class_id)
+        for class_id, name in class_mapping.items()
+        if _normalize_sprouted_class(name) == "sprouted_weevilled"
+    ]
+    negative_ids = [
+        int(class_id)
+        for class_id, name in class_mapping.items()
+        if _normalize_sprouted_class(name) == "normal"
+    ]
+    if len(positive_ids) != 1 or len(negative_ids) != 1:
+        raise ValueError("Class mapping must identify exactly one positive and one normal class")
+
+    positive_id = positive_ids[0]
+    negative_id = negative_ids[0]
+    positive_probability = float(probabilities[positive_id])
+    predicted_id = positive_id if positive_probability >= threshold else negative_id
+    confidence = float(probabilities[predicted_id])
+    return predicted_id, confidence
+
 def classify_sprouted_weevilled(
     grain_rgb: np.ndarray,
     grain_mask: np.ndarray,
@@ -286,7 +351,7 @@ def classify_sprouted_weevilled(
     model_info = get_model_info("sprouted_weevilled")
     model_path = get_project_root() / model_info.get("weights_path", "")
     
-    if model_path.exists() and model_info.get("status") == "trained":
+    if model_path.exists() and model_info.get("status") in ("trained", "experimental"):
         return _classify_sprouted_ml(grain_rgb, grain_mask, model_path)
     else:
         return _classify_sprouted_heuristic(grain_rgb, grain_mask)
@@ -301,13 +366,11 @@ def _classify_sprouted_ml(
     model_info = get_model_info("sprouted_weevilled")
     try:
         torch, T = _get_torch()
+        class_mapping = _load_sprouted_class_mapping(model_path)
         
-        coords = cv2.findNonZero(grain_mask)
-        if coords is None:
+        padded = masked_grain_square_crop(grain_rgb, grain_mask, target_size=224)
+        if padded is None:
             return _sprouted_unavailable("No valid pixels")
-        x, y, w, h = cv2.boundingRect(coords)
-        crop = grain_rgb[y:y+h, x:x+w]
-        padded = pad_to_square(crop, target_size=224)
         
         transform = T.Compose([
             T.ToTensor(),
@@ -321,20 +384,33 @@ def _classify_sprouted_ml(
         with torch.no_grad():
             output = model(tensor.to(device))
             probs = torch.softmax(output, dim=1)
-            pred_class = torch.argmax(probs, dim=1).item()
-            pred_prob = probs[0, pred_class].item()
+            decision_threshold = _sprouted_decision_threshold(model_path)
+            pred_class, pred_prob = _choose_sprouted_class(
+                probs[0].cpu().numpy(), class_mapping, decision_threshold
+            )
         
-        label = "sprouted_weevilled" if pred_class == 1 else "normal"
+        mapped_class = class_mapping.get(str(pred_class))
+        label = _normalize_sprouted_class(mapped_class) if mapped_class else None
+        if label is None:
+            return _sprouted_unavailable(
+                f"Checkpoint class {pred_class} has no recognized label mapping"
+            )
         
         return {
             "sprouted_weevilled_label": label,
             "probability": round(pred_prob, 4),
+            "confidence": round(pred_prob, 4),
+            "confidence_basis": "softmax score for predicted class; not calibrated",
+            "predicted_class_index": pred_class,
+            "class_mapping": class_mapping,
+            "decision_threshold": decision_threshold,
             "model_version": model_info.get("version", "1.0.0"),
             "confidence_level": "low" if pred_prob < 0.7 else "moderate",
             "method": "resnet18_transfer_learning",
-            "_source": "experimental — limited/cross-domain data",
-            "limitation": "Model trained on limited/cross-domain data. "
-                         "Results should be interpreted with caution.",
+            "_source": "experimental_synthetic_training",
+            "training_dataset": model_info.get("dataset"),
+            "limitation": "Model was trained on synthetic demonstration crops. "
+                         "Prediction and confidence are experimental and uncalibrated.",
         }
     except Exception as e:
         logger.warning(f"ResNet-18 inference failed: {e}. Using heuristic fallback.")
@@ -407,11 +483,15 @@ def batch_classify_sprouted_weevilled(
     model_info = get_model_info("sprouted_weevilled")
     model_path = get_project_root() / model_info.get("weights_path", "")
 
-    if not (model_path.exists() and model_info.get("status") == "trained"):
+    if not (
+        model_path.exists()
+        and model_info.get("status") in ("trained", "experimental")
+    ):
         return [_classify_sprouted_heuristic(image_rgb, m) for m in grain_masks]
 
     try:
         torch, T = _get_torch()
+        class_mapping = _load_sprouted_class_mapping(model_path)
         transform = T.Compose([
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -419,15 +499,13 @@ def batch_classify_sprouted_weevilled(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = _get_cached_model("sprouted_resnet18", model_path, device)
 
+        decision_threshold = _sprouted_decision_threshold(model_path)
         tensors = []
         valid_indices = []
         for i, mask in enumerate(grain_masks):
-            coords = cv2.findNonZero(mask)
-            if coords is None:
+            padded = masked_grain_square_crop(image_rgb, mask, target_size=224)
+            if padded is None:
                 continue
-            x, y, w, h = cv2.boundingRect(coords)
-            crop = image_rgb[y:y+h, x:x+w]
-            padded = pad_to_square(crop, target_size=224)
             tensors.append(transform(padded))
             valid_indices.append(i)
 
@@ -438,23 +516,36 @@ def batch_classify_sprouted_weevilled(
         with torch.no_grad():
             output = model(batch)
             probs = torch.softmax(output, dim=1)
-            pred_classes = torch.argmax(probs, dim=1).tolist()
-            pred_probs = probs[range(len(tensors)), pred_classes].tolist()
+            predictions = [
+                _choose_sprouted_class(probability, class_mapping, decision_threshold)
+                for probability in probs.cpu().numpy()
+            ]
 
         results = [_sprouted_unavailable("No valid grain pixels")] * len(grain_masks)
         for out_i, grain_i in enumerate(valid_indices):
-            pred_class = pred_classes[out_i]
-            pred_prob = pred_probs[out_i]
-            label = "sprouted_weevilled" if pred_class == 1 else "normal"
+            pred_class, pred_prob = predictions[out_i]
+            mapped_class = class_mapping.get(str(pred_class))
+            label = _normalize_sprouted_class(mapped_class) if mapped_class else None
+            if label is None:
+                results[grain_i] = _sprouted_unavailable(
+                    f"Checkpoint class {pred_class} has no recognized label mapping"
+                )
+                continue
             results[grain_i] = {
                 "sprouted_weevilled_label": label,
                 "probability": round(pred_prob, 4),
+                "confidence": round(pred_prob, 4),
+                "confidence_basis": "softmax score for predicted class; not calibrated",
+                "predicted_class_index": pred_class,
+                "class_mapping": class_mapping,
+                "decision_threshold": decision_threshold,
                 "model_version": model_info.get("version", "1.0.0"),
                 "confidence_level": "low" if pred_prob < 0.7 else "moderate",
                 "method": "resnet18_transfer_learning",
-                "_source": "experimental — limited/cross-domain data",
-                "limitation": "Model trained on limited/cross-domain data. "
-                              "Results should be interpreted with caution.",
+                "_source": "experimental_synthetic_training",
+                "training_dataset": model_info.get("dataset"),
+                "limitation": "Model was trained on synthetic demonstration crops. "
+                              "Prediction and confidence are experimental and uncalibrated.",
             }
         return results
     except Exception as e:

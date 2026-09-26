@@ -64,6 +64,40 @@
     "_source": "engineering_heuristic"
   },
 
+  "rice_gate": {
+    "rice_confidence_threshold": 0.65,
+    "min_object_area_pixels": 50,
+    "min_rice_fraction_of_detections": 0.15,
+    "min_objects_for_fraction_rule": 25,
+    "weights": {
+      "lightness": 0.35,
+      "chroma": 0.05,
+      "aspect_ratio": 0.5,
+      "surface_texture": 0.1
+    },
+    "lightness": {
+      "full_credit_l_star": 78.0,
+      "zero_credit_l_star": 45.0,
+      "bright_background_l_star": 70.0,
+      "full_credit_background_gap_fraction": 0.08,
+      "zero_credit_background_gap_fraction": 0.3
+    },
+    "chroma": {
+      "full_credit_c_star": 12.0,
+      "zero_credit_c_star": 30.0
+    },
+    "aspect_ratio": {
+      "full_credit": 2.2,
+      "zero_credit": 1.05
+    },
+    "surface_texture": {
+      "full_credit_roughness": 0.02,
+      "zero_credit_roughness": 0.08
+    },
+    "_source": "engineering_heuristic — rice-presence gate (Case 1). Cue weights/ramps tuned on a labelled probe set (see tests/test_rice_gate.py).",
+    "_notes": "A detection counts as rice ONLY when its class is the model-configuration rice class (models/segmentation/class_mapping.json -> class_id 1 'rice_grain') and its class confidence >= rice_confidence_threshold. Foreign-matter classes are never treated as rice. Keep min_object_area_pixels >= segmentation.min_grain_area_pixels so the gate never passes objects the segmenter rejects. Observed scores: well-lit milled rice 0.82-1.00, dense rice pile 0.77, grey/tan/dark stones on white 0.15-0.35, round grey blobs 0.40-0.55, brown/unpolished rice 0.62 — lower rice_confidence_threshold to 0.60 if brown or unpolished samples must pass."
+  },
+
   "admixture": {
     "mahalanobis_threshold": 3.0,
     "min_grains_for_analysis": 10,
