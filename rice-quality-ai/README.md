@@ -12,20 +12,27 @@ This repository is currently in **Phase 1**, focused exclusively on building and
 
 | Component | Status | Description |
 |-----------|--------|-------------|
+| Repository Audit / Status Doc | ✅ Complete | `docs/CURRENT_STATUS.md` — full component audit, what works / doesn't |
 | Dataset Audit Script | ✅ Implemented | `scripts/audit_dataset.py` — verifies mask type, counts instances, finds duplicates |
 | COCO Converter | ✅ Implemented | `scripts/convert_to_coco.py` — semantic or instance masks → COCO JSON |
 | Synthetic Data Generator | ✅ Implemented | `scripts/generate_synthetic.py` — touching/overlapping/dense composites |
 | Train/Val/Test Splits | ✅ Implemented | `scripts/create_splits.py` — stratified 70/15/15 split |
+| YOLO Config | ✅ Ready | `configs/rice_seg_yolo.yaml` — path + 2 class mapping for ultralytics |
 | YOLOv8l-seg Training | ✅ Pipeline Ready | `training/train_yolo_seg.py` — real training (not stub), 100 epochs, AdamW, copy-paste aug |
 | Mask R-CNN Baseline | ✅ Pipeline Ready | `training/train_maskrcnn.py` — comparison baseline, 50 epochs, SGD |
 | Evaluation Framework | ✅ Implemented | `scripts/evaluate_model.py` — 9 categories, mAP/AP, count error, failure classification |
 | Post-Processing Pipeline | ✅ Implemented | `ml/postprocessing.py` — conf filter, mask IoU NMS, tiling, global IDs, touching detect |
 | Clean Inference API | ✅ Implemented | `ml/inference.py` — `analyze_image()` public function, structured output |
 | Grain Crop Extraction | ✅ Implemented | `scripts/extract_grain_crops.py` — RGBA per-grain crops + masks + overlay |
-| Failure Analysis Report | ✅ Implemented | `scripts/analyze_failures.py` — auto-generates docs/FAILURE_ANALYSIS.md |
+| Failure Analysis Report | ✅ Implemented | `scripts/analyze_failures.py` + `docs/FAILURE_ANALYSIS.md` template (auto-append) |
+| Architecture / Model Doc | ✅ Complete | `docs/MODEL.md` — candidate comparison, stack diagram, hyperparameters, honesty policy |
+| Dataset Doc | ✅ Complete | `docs/DATASET.md` — 6-dataset table, mask format explanation, stats placeholders |
+| Training Doc | ✅ Complete | `docs/TRAINING.md` — prereqs, hardware tiers, 7-step protocol, pip commands |
+| Evaluation Doc | ✅ Complete | `docs/EVALUATION.md` — 9-category breakdown, all metric definitions, honesty policy |
 | YOLOv8 Inference Path | ✅ Integrated | `ml/segmentation.py` — priority auto, falls back gracefully |
-| Phase 1 API Endpoints | ✅ Added | `/phase1/analyze`, `/phase1/models`, `/phase1/grain_crop/{id}` |
-| Frontend Phase 1 Demo | ✅ Added | Tabbed interface: upload → analyze → overlay viewer → per-grain details |
+| Phase 1 API Endpoints | ✅ Added | `/phase1/analyze`, `/phase1/models`, `/phase1/grain_crop/{id}` in `backend/app/api/routes.py` |
+| Frontend Phase 1 Demo | ✅ Added | `frontend/src/components/Phase1Demo.tsx` — upload → analyze → overlay → click grain |
+| Backend Requirements | ✅ Updated | `backend/requirements.txt` — added `ultralytics`, `pycocotools`, `torch`, `torchvision` |
 | Model Training | ⏳ PENDING Data | Requires datasets downloaded + audited (see docs/DATASET.md) |
 | Model Evaluation | ⏳ PENDING Training | Requires trained checkpoint + test annotations |
 
@@ -158,6 +165,12 @@ rice-quality-ai/
 │   ├── processed/                   # Processed datasets
 │   └── raw/                         # Raw training imagery
 ├── docs/
+│   ├── CURRENT_STATUS.md            # Phase 1 audit: works / doesn't / dataset state
+│   ├── DATASET.md                   # Datasets table, format, mask encoding, audit placeholders
+│   ├── TRAINING.md                  # Prereqs, hardware tiers, 7-step train protocol
+│   ├── EVALUATION.md                # 9 categories A–I, metric definitions, honesty policy
+│   ├── MODEL.md                     # Candidate comparison, stack diagram, hyperparams
+│   ├── FAILURE_ANALYSIS.md          # Failure taxonomy, response actions, auto-run log
 │   ├── architecture.md              # System design & component diagrams
 │   ├── edge-cases.md                # 1 to 5000+ grains, touching grains, etc.
 │   ├── model-training.md            # Training pipelines & metrics
@@ -205,6 +218,8 @@ rice-quality-ai/
 │   ├── train_damaged.py             # VGG-19 transfer learning script
 │   ├── train_foreign_matter.py      # YOLO fine-tuning setup
 │   ├── train_segmentation.py        # Mask R-CNN setup
+│   ├── train_yolo_seg.py          # YOLOv8l-seg real training (AdamW, 100 ep, copy-paste)
+│   ├── train_maskrcnn.py            # Mask R-CNN baseline (SGD 50 ep)
 │   └── train_sprouted.py            # ResNet-18 transfer learning script
 ├── .env.example
 ├── .gitignore

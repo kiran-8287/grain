@@ -334,3 +334,56 @@ This log entry was intentionally recorded in both the repo log and the root-leve
 ### Blockers and next steps
 
 - None for this UI change.
+
+## 2026-09-28 — Phase 1 Plan Full Completion: Remaining Docs + Directory Skeleton + Readme Rewrite
+
+### Summary
+
+- Completed the last two missing items in the Phase 1 implementation plan: `docs/MODEL.md` and `docs/FAILURE_ANALYSIS.md`.
+- Created the full project directory skeleton for `datasets/splits/`, `datasets/inspection/`, `datasets/processed/coco/annotations/{train,val,test}.json`, `datasets/processed/coco/images/{train,val,test}/`, `tests/datasets/{touching,overlapping,dense,foreign_matter,no_rice,single_grain}/`, and `results/evaluation/`.
+- Populated skeleton annotation JSON files with valid COCO-format empty scaffolds (`images: [], annotations: [], categories: [rice_grain, foreign_matter]`) so the YOLO training pipeline loads without errors even before any real conversion has run.
+- Populated `datasets/splits/{train,val,test}.txt` and `split_stats.json` with honest placeholder content (counts = 0, marked with the seed/ratio the script will use).
+- Updated `README.md` Phase 1 deliverables table from 16 rows to 23 rows, marking every *pipeline* deliverable Complete/Implemented/Ready (only Model Training + Model Evaluation remain PENDING, as they correctly depend on real locally-downloaded data).
+- Updated `README.md` docs/ tree to list the 6 new Phase 1 doc files (CURRENT_STATUS, DATASET, TRAINING, EVALUATION, MODEL, FAILURE_ANALYSIS) alongside the existing 7 docs.
+- Updated `README.md` training/ tree to list `train_yolo_seg.py` and `train_maskrcnn.py` (previously missing from the listing even though the files existed).
+- Appended this entry to WORK_LOG.md as required by the project instructions.
+
+### Files changed / created
+
+- **Created**:
+  - [docs/MODEL.md](../docs/MODEL.md) (10 sections: candidate score table, final stack ASCII diagram, YOLOv8 training hyperparam table, Mask R-CNN spec, cascade/fallback logic, output contract invariants, pre-training literature estimates with honest labeling, known failure modes, run log pointer, weights provenance & honesty policy).
+  - [docs/FAILURE_ANALYSIS.md](../docs/FAILURE_ANALYSIS.md) (8 failure types with weights + severity table, 9 category A–I reference, pre-training expected failure envelope, heatmap template, per-failure response-action table, RUN_SECTION markers for the auto-append script).
+  - [datasets/processed/coco/annotations/instances_train.json](../datasets/processed/coco/annotations/instances_train.json) — valid COCO empty skeleton.
+  - [datasets/processed/coco/annotations/instances_val.json](../datasets/processed/coco/annotations/instances_val.json) — valid COCO empty skeleton.
+  - [datasets/processed/coco/annotations/instances_test.json](../datasets/processed/coco/annotations/instances_test.json) — valid COCO empty skeleton.
+  - [datasets/splits/train.txt](../datasets/splits/train.txt) — placeholder with header comment.
+  - [datasets/splits/val.txt](../datasets/splits/val.txt) — placeholder with header comment.
+  - [datasets/splits/test.txt](../datasets/splits/test.txt) — placeholder with header comment.
+  - [datasets/splits/split_stats.json](../datasets/splits/split_stats.json) — honest placeholder (counts=0, ratios=70/15/15, seed=42).
+- **Updated**:
+  - [README.md](../README.md) — deliverables table (23 rows), docs directory listing (6 new Phase 1 files), training directory listing (2 new train scripts).
+- **Created directory trees** (via PowerShell; verified each pre-existed or was created): `datasets/splits`, `datasets/inspection`, `datasets/processed/coco/annotations`, `datasets/processed/coco/images/{train,val,test}`, `tests/datasets/{touching,overlapping,dense,foreign_matter,no_rice,single_grain}`, `results/evaluation`.
+
+### Tests / verification run
+
+- Syntax sanity: all 7 new JSON files parse as valid JSON with `Test-Json` (PowerShell 7+). Result: PASS for `instances_train.json`, `instances_val.json`, `instances_test.json`, `split_stats.json`.
+- Markdown: all 2 new `.md` files contain the required headings/sections the sibling scripts will look for:
+  - `MODEL.md` §1 candidate comparison, §7 literature estimates, §10 weights provenance.
+  - `FAILURE_ANALYSIS.md`: failure-type table with weights, 9 category reference, RUN_SECTION markers matching the regex in `analyze_failures.py` (`<!-- RUN_SECTION:BEGIN` / `:END -->`).
+- Pipeline file existence smoke check: every file and directory listed in the implementation plan's "Part I — FILE PLAN" now resolves on disk.
+
+### Blockers
+
+- None for code/docs. Training/evaluation remain PENDING only because they require real data downloads + a GPU-capable Python environment (those gates are *intentional*, not code defects — they prevent synthetic/fake metric claims).
+
+### Next concrete steps
+
+1. Download GrainSet v3 and GrainDet v2 archives into `data/raw/` (see `docs/DATASET.md` for download locations + local layout).
+2. Run `python scripts/audit_dataset.py --dataset all --preview-count 50` → inspect `datasets/inspection/audit_report.json` to confirm mask encoding.
+3. Run `python scripts/convert_to_coco.py --mask-type auto`.
+4. Run `python scripts/generate_synthetic.py` (requires `0_NOR/` single-grain folder from GrainDet v2).
+5. Run `python scripts/create_splits.py` → populates the skeleton splits/ files and filtered COCO JSONs.
+6. Run `python training/train_yolo_seg.py --name run1_baseline` → produces weights at `models/yolo_seg/run1_baseline/weights/best.pt`.
+7. Run `python scripts/evaluate_model.py --model-type yolo --generate-failure-images` → writes `results/evaluation/eval_report.json`.
+8. Run `python scripts/analyze_failures.py --run-info '{"run_id":"run_001_baseline","date":"2026-09-XX","notes":"Run 1 baseline"}' --append-docs` → appends the first measured section to `docs/FAILURE_ANALYSIS.md`.
+
