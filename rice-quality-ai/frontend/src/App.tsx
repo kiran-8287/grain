@@ -10,33 +10,7 @@ import { GrainTable } from './components/GrainTable';
 import { QualityWarningsPanel } from './components/QualityWarningsPanel';
 import { ExportControls } from './components/ExportControls';
 import { AnalysisResult, GrainInstance } from './types';
-import { AlertCircle, RefreshCw, Layers, XCircle } from 'lucide-react';
-
-/*
- * RESTORATION NOTE — Phase 1 Demo tab is temporarily hidden (2026-09-28).
- *
- * To re-enable the Phase1Demo side-by-side tab alongside the full dashboard:
- *   1. Add import:
- *        import { Phase1Demo } from './components/Phase1Demo';
- *        import { ScatterChart } from 'lucide-react';
- *   2. Change ActiveTab type:
- *        type ActiveTab = 'dashboard' | 'phase1';
- *   3. Add state default:
- *        const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
- *   4. Add a second TabButton (copy the dashboard one, label="Phase 1 Demo",
- *      tab="phase1", icon={<ScatterChart className="w-4 h-4"/>}).
- *   5. Replace the direct dashboard JSX block with:
- *        {activeTab === 'phase1' ? (
- *          <Phase1Demo />
- *        ) : (
- *          <> ... existing dashboard children ... </>
- *        )}
- *
- * The Phase1Demo component file itself was NOT deleted. It remains at:
- *   frontend/src/components/Phase1Demo.tsx
- * and the /api/phase1/* backend endpoints also remain enabled for direct
- * developer/curl/Postman usage.
- */
+import { AlertCircle, RefreshCw, XCircle } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -135,27 +109,9 @@ export const App: React.FC = () => {
         isBackendHealthy={backendHealthy}
       />
 
-      {/* Top banner: dashboard header row */}
-      <div className="border-b border-border bg-surface sticky top-16 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 py-3">
-            <Layers className="w-4 h-4 text-brand" />
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-text-primary">
-                Full Analysis Dashboard
-              </span>
-              <span className="text-[11px] text-text-secondary">
-                Powered by Phase 1 masking cascade (YOLOv8 → Mask R-CNN → Classical CV)
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Main Container */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-        <>
-          {/* Error Banner */}
+        {/* Error Banner */}
             {errorMessage && (
               <div className="mb-6 bg-error-bg border border-error/30 rounded-xl p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
@@ -257,6 +213,7 @@ export const App: React.FC = () => {
                 {/* 2. Full-width annotated image */}
                 <AnnotatedViewer
                   annotatedImageUrl={result.annotated_image_base64}
+                  originalImageUrl={result.original_image_base64}
                   grains={result.grains}
                   selectedGrainId={selectedGrainId}
                   onSelectGrain={(id) => setSelectedGrainId(id)}
@@ -293,8 +250,7 @@ export const App: React.FC = () => {
                 {/* 7. Export Controls */}
                 <ExportControls jobId={result.job_id} onReset={handleReset} />
               </div>
-            )}
-        </>
+             )}
       </main>
     </div>
   );

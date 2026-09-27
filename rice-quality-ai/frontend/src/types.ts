@@ -61,9 +61,11 @@ export interface GrainInstance {
   bbox: [number, number, number, number];
   centroid: [number, number];
   confidence: number;
+  confidence_label?: 'HIGH' | 'MEDIUM' | 'LOW';
   segmentation_quality: string;
   is_touching: boolean;
   contour?: number[][];
+  mask_polygon?: Array<[number, number]>;
   geometry: GrainGeometry;
   defects: {
     broken: DefectItem;
@@ -308,6 +310,7 @@ export interface AnalysisResult {
   summary: SampleSummary;
   standards: StandardsResult;
   annotated_image_base64?: string;
+  original_image_base64?: string;
   warnings: string[];
   processing_time_seconds: number;
 }

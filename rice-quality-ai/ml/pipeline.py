@@ -661,9 +661,15 @@ class RiceQualityPipeline:
                 "bbox": list(grain.bbox),
                 "centroid": [round(c, 2) for c in grain.centroid],
                 "confidence": grain.confidence,
+                "confidence_label": grain.confidence_label,
                 "segmentation_quality": grain.segmentation_quality,
                 "is_touching": grain.is_touching,
                 "contour": contour_pts,
+                "mask_polygon": (
+                    [[float(x), float(y)] for [x, y] in grain.mask_polygon]
+                    if isinstance(grain.mask_polygon, (list, tuple)) and len(grain.mask_polygon) >= 3
+                    else None
+                ),
                 "geometry": geom.to_dict(),
                 "defects": {
                     "broken": broken_res,
@@ -977,6 +983,7 @@ class RiceQualityPipeline:
             "standards": standards_res,
             "rice_gate": rice_gate,
             "annotated_image_base64": annotated_b64,
+            "original_image_base64": self._encode_rgb_to_jpeg_b64(image_rgb=image_rgb),
             "warnings": unique_warnings,
             "processing_time_seconds": round(total_elapsed, 3),
         }
@@ -1076,6 +1083,7 @@ class RiceQualityPipeline:
             "standards": {"status": "Not evaluated — no rice grains detected"},
             "rice_gate": rice_gate,
             "annotated_image_base64": annotated_b64,
+            "original_image_base64": self._encode_rgb_to_jpeg_b64(image_rgb=image_rgb),
             "warnings": unique_warnings,
             "processing_time_seconds": round(time.time() - start_time, 3),
         }
