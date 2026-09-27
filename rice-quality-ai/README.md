@@ -4,6 +4,119 @@ An image-analysis project for raw milled rice. It reports per-grain image predic
 
 ---
 
+## 🌱 Phase 1 — Instance Segmentation (Current Sprint)
+
+This repository is currently in **Phase 1**, focused exclusively on building and training a production-quality rice instance-segmentation system. The 14-parameter grading, defect classification, and quality analysis described below is the project's long-term target and is explicitly **out of scope for Phase 1**.
+
+### Phase 1 Deliverables (What is being implemented NOW)
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Dataset Audit Script | ✅ Implemented | `scripts/audit_dataset.py` — verifies mask type, counts instances, finds duplicates |
+| COCO Converter | ✅ Implemented | `scripts/convert_to_coco.py` — semantic or instance masks → COCO JSON |
+| Synthetic Data Generator | ✅ Implemented | `scripts/generate_synthetic.py` — touching/overlapping/dense composites |
+| Train/Val/Test Splits | ✅ Implemented | `scripts/create_splits.py` — stratified 70/15/15 split |
+| YOLOv8l-seg Training | ✅ Pipeline Ready | `training/train_yolo_seg.py` — real training (not stub), 100 epochs, AdamW, copy-paste aug |
+| Mask R-CNN Baseline | ✅ Pipeline Ready | `training/train_maskrcnn.py` — comparison baseline, 50 epochs, SGD |
+| Evaluation Framework | ✅ Implemented | `scripts/evaluate_model.py` — 9 categories, mAP/AP, count error, failure classification |
+| Post-Processing Pipeline | ✅ Implemented | `ml/postprocessing.py` — conf filter, mask IoU NMS, tiling, global IDs, touching detect |
+| Clean Inference API | ✅ Implemented | `ml/inference.py` — `analyze_image()` public function, structured output |
+| Grain Crop Extraction | ✅ Implemented | `scripts/extract_grain_crops.py` — RGBA per-grain crops + masks + overlay |
+| Failure Analysis Report | ✅ Implemented | `scripts/analyze_failures.py` — auto-generates docs/FAILURE_ANALYSIS.md |
+| YOLOv8 Inference Path | ✅ Integrated | `ml/segmentation.py` — priority auto, falls back gracefully |
+| Phase 1 API Endpoints | ✅ Added | `/phase1/analyze`, `/phase1/models`, `/phase1/grain_crop/{id}` |
+| Frontend Phase 1 Demo | ✅ Added | Tabbed interface: upload → analyze → overlay viewer → per-grain details |
+| Model Training | ⏳ PENDING Data | Requires datasets downloaded + audited (see docs/DATASET.md) |
+| Model Evaluation | ⏳ PENDING Training | Requires trained checkpoint + test annotations |
+
+### Phase 1 Quick Start
+
+```bash
+# 1. Install dependencies
+cd rice-quality-ai
+pip install -r backend/requirements.txt
+
+# 2. Audit datasets (CRITICAL FIRST STEP before training)
+python scripts/audit_dataset.py --dataset all --preview-count 20
+# → Check datasets/inspection/audit_report.json for mask type
+
+# 3. Convert to COCO format
+python scripts/convert_to_coco.py --mask-type auto
+
+# 4. Generate synthetic touching/overlapping/dense examples
+python scripts/generate_synthetic.py
+
+# 5. Create 70/15/15 stratified splits
+python scripts/create_splits.py
+
+# 6. Train YOLOv8l-seg (main model)
+python training/train_yolo_seg.py --epochs 100 --name run1_baseline
+
+# 7. Evaluate trained model
+python scripts/evaluate_model.py --model-type yolo --generate-failure-images
+
+# 8. Analyze failures → docs/FAILURE_ANALYSIS.md
+python scripts/analyze_failures.py --eval-dir results/evaluation --append-docs
+
+# 9. Launch backend + Phase 1 frontend
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+# → http://localhost:8000, click "Phase 1 Demo" tab
+```
+
+### Architecture Decision
+
+**Primary model: YOLOv8l-seg**
+
+Selected for:
+- Single-package install (`ultralytics`)
+- Anchor-free detector → better small/dense objects
+- Native copy-paste augmentation → critical for touching grain separation
+- Real-time inference (30-80ms CPU) → responsive frontend
+- Single `.pt` file deployment
+- Largest literature ecosystem for rice grain domain
+
+Comparison baseline: **Mask R-CNN ResNet50-FPN-v2** (validation only, not production)
+Emergency fallback: **Classical CV Watershed** (existing code, never deleted)
+
+### Phase 1 In Scope / Out of Scope
+
+✅ **IN SCOPE (now):**
+- Rice detection (presence/absence)
+- Individual rice grain **instance** segmentation (not semantic)
+- Correctly separate touching grains
+- Attempt to separate overlapping grains
+- Handle dense scenes (50+, 100+ grains) via tiling
+- Foreign matter detection (segmentation if labels available, else bbox)
+- No-rice detection → `NO_RICE_DETECTED`
+- Unresolved rice clusters → NEVER misclassified as foreign matter
+- Unique grain ID assignment
+- Per-grain confidence + HIGH/MEDIUM/LOW labels
+- Per-grain crop extraction (RGBA PNG with mask alpha)
+- Frontend demo: upload → analyze → click grain → view details
+- Honest measured metrics, 9-category evaluation, failure analysis
+
+❌ **OUT OF SCOPE (deferred to Phase 2+):**
+- 14-parameter classification (Broken, Damaged, Discoloured, Chalky, Red, Dehusked, Immature, Sprouted/Weevilled, Length, Breadth, L/B, Foreign Matter %, Admixture, Total)
+- Grading / Grade A / Grade B decisions
+- KMS 2026-27 compliance screening
+- Defect classification on per-grain crops
+- Any claim about official lot compliance
+
+### Required Data Downloads Before Training
+
+See [docs/DATASET.md](docs/DATASET.md) for full details. Required datasets are NOT stored in this repository due to size. You must download:
+
+| Dataset | Public Source | Local Path | Size Estimate |
+|---------|---------------|------------|---------------|
+| GrainSet Rice v3 | Figshare DOI 10.6084/m9.figshare.22987292.v3 | `data/raw/grainset_rice_v3/` | ~5–10 GB (images + masks) |
+| GrainDet Rice v2 | Figshare DOI 10.6084/m9.figshare.23686368.v2 | `data/raw/graindet_rice_v2/` | ~2–5 GB (8 classification folders) |
+
+After downloading, run Step 2 (audit) to verify mask encoding before training.
+
+---
+
+---
+
 ## 🌾 Key System Highlights
 
 - **Regression-tested cases**: 1-grain, 2-grain, mixed-object, and larger test images are covered. Arbitrary production images are not universally validated.

@@ -71,3 +71,102 @@
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out forwards;
 }
+
+/* Phase 1: Selected grain pulse ring animation */
+@keyframes phase1-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0.55),
+                0 0 0 0 hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0.15),
+                0 0 0 12px hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0),
+                0 0 0 0 hsla(var(--phase1-pulse-hue, 140), 80%, 55%, 0);
+  }
+}
+
+.phase1-pulse-ring {
+  animation: phase1-pulse-ring 1.8s ease-out infinite;
+}
+
+/* Phase 1: Tooltip */
+.phase1-tooltip {
+  backdrop-filter: blur(6px);
+  background-color: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.08),
+    0 6px 12px -4px rgba(0, 0, 0, 0.06),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  animation: fadeIn 0.12s ease-out;
+  max-width: 220px;
+  z-index: 50;
+}
+
+/* Phase 1: Confidence badge colors */
+.phase1-badge-high {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid rgba(63, 125, 88, 0.3);
+}
+
+.phase1-badge-medium {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid rgba(169, 120, 50, 0.3);
+}
+
+.phase1-badge-low {
+  background-color: #FFF7ED;
+  color: #C2410C;
+  border: 1px solid rgba(194, 65, 12, 0.25);
+}
+
+/* Phase 1: Grain mask hover highlight */
+.phase1-grain-hover {
+  transition: opacity 0.15s ease-out;
+}
+
+/* Phase 1: Canvas grain cursor */
+canvas.phase1-canvas {
+  cursor: crosshair;
+}
+
+/* Phase 1: Tab underline animated */
+@keyframes phase1-tab-indicator {
+  from { transform: scaleX(0.6); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+.phase1-tab-active-indicator {
+  animation: phase1-tab-indicator 0.22s ease-out forwards;
+  transform-origin: center;
+}
+
+/* Phase 1: Segmentation canvas wrapper */
+.phase1-canvas-wrap {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Phase 1: Spinner helper */
+.phase1-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Phase 1: Confidence bar shimmer */
+@keyframes phase1-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.phase1-conf-shimmer {
+  background-size: 200% 100%;
+  animation: phase1-shimmer 2.5s linear infinite;
+}

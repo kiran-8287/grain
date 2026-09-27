@@ -35,6 +35,7 @@ class GrainInstance:
     is_overlapping: bool = False
     segmentation_quality: str = "good"  # good, uncertain, poor
     method: str = "classical_cv_fallback"
+    is_foreign_matter: bool = False
 
     def mask_area(self) -> int:
         return int(np.sum(self.mask > 0))
@@ -75,25 +76,86 @@ def segment_grains(
     
     Args:
         image_rgb: RGB image (numpy array)
-        method: 'mask_rcnn', 'classical_cv', or 'auto'
+        method: 'yolov8', 'mask_rcnn', 'classical_cv', or 'auto'
         
     Returns:
         SegmentationResult with individual grain masks
     """
     start_time = time.time()
     
+    project_root = get_project_root()
+
+    # Check if YOLOv8 weights are available and ultralytics is installed
+    yolo_weights_path = project_root / "models" / "yolo_seg" / "run1_baseline" / "weights" / "best.pt"
+    yolov8_weights_exist = yolo_weights_path.exists()
+    yolov8_installed = False
+    yolo_model = None
+    try:
+        from ultralytics import YOLO
+        yolov8_installed = True
+        if yolov8_weights_exist:
+            yolo_model = YOLO(str(yolo_weights_path))
+    except ImportError:
+        yolov8_installed = False
+    except Exception as exc:
+        logger.warning(f"Failed to load YOLO model: {exc}")
+        yolov8_installed = False
+
+    yolov8_available = yolov8_weights_exist and yolov8_installed and yolo_model is not None
+
+    # Determine YOLO method string based on weights filename
+    yolov8_method_str = "yolov8l-seg"
+    if yolov8_weights_exist:
+        wp = str(yolo_weights_path).lower()
+        if "nano" in wp or "yolov8n" in wp or "-n-" in wp or "_n_" in wp:
+            yolov8_method_str = "yolov8n-seg"
+        elif "large" in wp or "yolov8l" in wp or "-l-" in wp or "_l_" in wp:
+            yolov8_method_str = "yolov8l-seg"
+
     # Check if Mask R-CNN weights are available
     model_info = get_model_info("segmentation")
-    mask_rcnn_available = (
+    mask_rcnn_weights_exist = (
         model_info.get("status") == "trained" and
-        (get_project_root() / model_info.get("weights_path", "")).exists()
+        (project_root / model_info.get("weights_path", "")).exists()
     )
-    
+    mask_rcnn_installed = False
+    try:
+        import torch
+        mask_rcnn_installed = True
+    except ImportError:
+        mask_rcnn_installed = False
+
+    mask_rcnn_available = mask_rcnn_weights_exist and mask_rcnn_installed
+
     if method == "auto":
-        method = "mask_rcnn" if mask_rcnn_available else "classical_cv"
-    
-    if method == "mask_rcnn" and mask_rcnn_available:
+        if yolov8_available:
+            method = "yolov8"
+        elif mask_rcnn_available:
+            method = "mask_rcnn"
+        else:
+            method = "classical_cv"
+
+    if method == "yolov8":
+        if yolov8_available:
+            result = _segment_yolov8(image_rgb, yolo_model, yolov8_method_str)
+        else:
+            missing = []
+            if not yolov8_weights_exist:
+                missing.append(f"weights not found at {yolo_weights_path}")
+            if not yolov8_installed:
+                missing.append("ultralytics package not installed")
+            logger.warning(
+                "YOLOv8 not available (" + ", ".join(missing) + "). "
+                "Trying Mask R-CNN, then Classical CV fallback."
+            )
+            if mask_rcnn_available:
+                result = _segment_mask_rcnn(image_rgb)
+            else:
+                result = _segment_classical_cv(image_rgb)
+    elif method == "mask_rcnn" and mask_rcnn_available:
         result = _segment_mask_rcnn(image_rgb)
+    elif method == "classical_cv":
+        result = _segment_classical_cv(image_rgb)
     else:
         if method == "mask_rcnn" and not mask_rcnn_available:
             logger.warning(
@@ -102,9 +164,223 @@ def segment_grains(
                 "Train segmentation model with: python training/train_segmentation.py"
             )
         result = _segment_classical_cv(image_rgb)
-    
+
     result.processing_time_seconds = time.time() - start_time
     return result
+
+
+def _segment_yolov8(
+    image_rgb: np.ndarray,
+    model,
+    method_str: str = "yolov8l-seg",
+) -> SegmentationResult:
+    """
+    Segment using YOLOv8-seg instance segmentation model.
+
+    Handles:
+      - category_id=1 (rice_grain): standard GrainInstance with is_foreign_matter=False
+      - category_id=2 (foreign_matter): GrainInstance with is_foreign_matter=True
+    """
+    h, w = image_rgb.shape[:2]
+    warnings: List[str] = []
+
+    min_area = get_threshold("segmentation", "min_grain_area_pixels", 50)
+
+    try:
+        results = model.predict(
+            image_rgb,
+            conf=0.25,
+            iou=0.5,
+            verbose=False,
+        )
+    except Exception as exc:
+        logger.error(f"YOLOv8 predict() failed: {exc}. Falling back to Classical CV.")
+        fallback = _segment_classical_cv(image_rgb)
+        fallback.warnings.append(f"YOLOv8 inference failed ({exc}); used Classical CV fallback.")
+        return fallback
+
+    grains: List[GrainInstance] = []
+    uncertain_count = 0
+    rejected_count = 0
+    estimated_merged = 0
+    grain_id = 0
+    fm_id = 0
+
+    if not results:
+        return SegmentationResult(
+            grains=[],
+            detected_count=0,
+            accepted_count=0,
+            uncertain_count=0,
+            rejected_count=0,
+            estimated_merged_count=0,
+            method=method_str,
+            processing_time_seconds=0.0,
+            warnings=["YOLOv8 returned no predictions."],
+        )
+
+    result = results[0]
+    boxes = getattr(result, "boxes", None)
+    masks = getattr(result, "masks", None)
+
+    if boxes is None:
+        return SegmentationResult(
+            grains=[],
+            detected_count=0,
+            accepted_count=0,
+            uncertain_count=0,
+            rejected_count=0,
+            estimated_merged_count=0,
+            method=method_str,
+            processing_time_seconds=0.0,
+            warnings=["YOLOv8 predictions have no boxes."],
+        )
+
+    num_detections = len(boxes)
+
+    for i in range(num_detections):
+        # Extract box data
+        xyxy = None
+        conf = 0.0
+        cls_id = 0
+        try:
+            if hasattr(boxes, "xyxy"):
+                xyxy_arr = boxes.xyxy[i].cpu().numpy() if hasattr(boxes.xyxy[i], "cpu") else np.array(boxes.xyxy[i])
+                xyxy = [float(v) for v in xyxy_arr]
+            if hasattr(boxes, "conf"):
+                c_val = boxes.conf[i].cpu().numpy() if hasattr(boxes.conf[i], "cpu") else boxes.conf[i]
+                conf = float(c_val)
+            if hasattr(boxes, "cls"):
+                cl_val = boxes.cls[i].cpu().numpy() if hasattr(boxes.cls[i], "cpu") else boxes.cls[i]
+                cls_id = int(cl_val)
+        except Exception as exc:
+            logger.warning(f"Failed to extract YOLO detection {i}: {exc}")
+            rejected_count += 1
+            continue
+
+        if xyxy is None or len(xyxy) != 4:
+            rejected_count += 1
+            continue
+
+        x1, y1, x2, y2 = xyxy
+        bx = int(max(0, round(x1)))
+        by = int(max(0, round(y1)))
+        bw = int(max(0, min(w, round(x2)) - bx))
+        bh = int(max(0, min(h, round(y2)) - by))
+        if bw <= 0 or bh <= 0:
+            rejected_count += 1
+            continue
+
+        # Extract mask
+        mask_arr = np.zeros((h, w), dtype=np.uint8)
+        if masks is not None and i < len(masks):
+            try:
+                m_data = None
+                if hasattr(masks, "data"):
+                    d = masks.data[i]
+                    m_data = d.cpu().numpy() if hasattr(d, "cpu") else np.array(d)
+                if m_data is not None:
+                    m_bool = m_data.squeeze() > 0.5
+                    if m_bool.shape[:2] != (h, w):
+                        m_bool = cv2.resize(
+                            m_bool.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST
+                        ).astype(bool)
+                    mask_arr[m_bool] = 255
+            except Exception:
+                # If mask extraction fails, fallback to bbox rectangle mask
+                mask_arr[by:by + bh, bx:bx + bw] = 255
+
+        if int(np.sum(mask_arr > 0)) < min_area:
+            rejected_count += 1
+            continue
+
+        # Extract contour and centroid
+        contour = None
+        try:
+            cnts, _ = cv2.findContours(mask_arr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if cnts:
+                contour = max(cnts, key=cv2.contourArea)
+        except Exception:
+            contour = None
+
+        if contour is not None and len(contour) > 0:
+            M = cv2.moments(contour)
+            if M["m00"] > 0:
+                cx = float(M["m10"] / M["m00"])
+                cy = float(M["m01"] / M["m00"])
+            else:
+                cx = float(bx + bw / 2.0)
+                cy = float(by + bh / 2.0)
+        else:
+            cx = float(bx + bw / 2.0)
+            cy = float(by + bh / 2.0)
+
+        is_fm = cls_id == 2
+
+        if is_fm:
+            fm_id += 1
+            instance_id = fm_id
+        else:
+            grain_id += 1
+            instance_id = grain_id
+
+        # Compute simple quality heuristic
+        seg_quality = "good"
+        if conf < 0.5:
+            seg_quality = "uncertain"
+            uncertain_count += 1
+
+        is_touching = False
+        try:
+            # If mask solidity is low, it may be a touching cluster
+            if contour is not None and len(contour) > 3:
+                hull = cv2.convexHull(contour)
+                hull_area = cv2.contourArea(hull)
+                mask_area_val = float(np.sum(mask_arr > 0))
+                if hull_area > 0:
+                    solidity = mask_area_val / hull_area
+                    if solidity < 0.85:
+                        is_touching = True
+                        estimated_merged += 1
+                        if seg_quality == "good":
+                            seg_quality = "uncertain"
+                            uncertain_count += 1
+        except Exception:
+            pass
+
+        confidence_val = round(float(max(0.0, min(1.0, conf))), 4)
+
+        grain = GrainInstance(
+            grain_id=instance_id,
+            mask=mask_arr,
+            bbox=(bx, by, bw, bh),
+            confidence=confidence_val,
+            centroid=(cx, cy),
+            contour=contour,
+            is_touching=is_touching,
+            segmentation_quality=seg_quality,
+            method=method_str,
+            is_foreign_matter=is_fm,
+        )
+        grains.append(grain)
+
+    detected_count = grain_id + fm_id + rejected_count
+    accepted_count = len(grains)
+
+    if not grains:
+        warnings.append("No grain instances found after YOLOv8 segmentation.")
+
+    return SegmentationResult(
+        grains=grains,
+        detected_count=detected_count,
+        accepted_count=accepted_count,
+        uncertain_count=uncertain_count,
+        rejected_count=rejected_count,
+        estimated_merged_count=estimated_merged,
+        method=method_str,
+        processing_time_seconds=0.0,
+        warnings=warnings,
+    )
 
 
 def _segment_mask_rcnn(image_rgb: np.ndarray) -> SegmentationResult:

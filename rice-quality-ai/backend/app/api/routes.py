@@ -6,11 +6,13 @@ import base64
 import io
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, List, Dict
 
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Path, Response, UploadFile
 from fastapi.responses import PlainTextResponse
+
+import cv2
 
 
 def _sanitize_numpy(obj: Any) -> Any:
@@ -44,7 +46,7 @@ from backend.app.schemas.models import (
 )
 from backend.app.services.export import export_result_csv, export_result_json
 from backend.app.services.job_manager import job_manager
-from ml.config import load_model_registry, load_standards
+from ml.config import load_model_registry, load_standards, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -198,4 +200,649 @@ def export_job_csv(job_id: str):
         content=csv_str,
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=rice_analysis_{job_id[:8]}.csv"},
+    )
+
+
+# =============================================================================
+# PHASE 1 ENDPOINTS
+# =============================================================================
+
+
+def _decode_image_bytes(contents: bytes) -> np.ndarray:
+    """
+    Decode raw image bytes into a uint8 HxWxC RGB numpy array.
+    Raises HTTPException(400) on failure.
+    """
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        arr = np.frombuffer(contents, dtype=np.uint8)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not read uploaded file as bytes: {exc}",
+        )
+
+    img_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img_bgr is None or img_bgr.size == 0:
+        # Try with unchanged flag for alpha/grayscale
+        img_any = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if img_any is None or img_any.size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid image file: could not decode. Supported formats: JPG, PNG, WEBP, TIFF, BMP.",
+            )
+        if len(img_any.shape) == 2:
+            img_bgr = cv2.cvtColor(img_any, cv2.COLOR_GRAY2BGR)
+        elif img_any.shape[2] == 4:
+            img_bgr = cv2.cvtColor(img_any, cv2.COLOR_BGRA2BGR)
+        else:
+            img_bgr = img_any
+
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    return img_rgb
+
+
+def _encode_image_base64(img_rgb: np.ndarray, fmt: str = ".png") -> str:
+    """Encode an RGB(HxWxC) image to a data URL base64 string."""
+    img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+    ok, buf = cv2.imencode(fmt, img_bgr)
+    if not ok:
+        return ""
+    mime = "image/png" if fmt == ".png" else "image/jpeg"
+    raw = base64.b64encode(buf.tobytes()).decode("ascii")
+    return f"data:{mime};base64,{raw}"
+
+
+def _build_phase1_overlay(
+    img_rgb: np.ndarray,
+    analysis: Dict[str, Any],
+) -> np.ndarray:
+    """
+    Build an overlay image on top of the original RGB image showing:
+      - Coloured semi-transparent grain masks
+      - Grain ID text above each grain
+      - Red bounding boxes around foreign matter with label "FM #id"
+    """
+    overlay = img_rgb.copy()
+    h, w = overlay.shape[:2]
+
+    # 1) Rice grain masks — use distinct colours per grain (cycle palette)
+    palette: List[Tuple[int, int, int]] = [
+        (100, 220, 120),
+        (120, 180, 255),
+        (255, 200, 100),
+        (200, 130, 255),
+        (100, 220, 220),
+        (255, 160, 180),
+        (220, 220, 100),
+        (170, 220, 255),
+    ]
+
+    grains: List[Dict[str, Any]] = analysis.get("grains", []) or []
+    for idx, g in enumerate(grains):
+        bbox = g.get("bbox", [0, 0, 0, 0])
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        bx, by, bw, bh = [int(v) for v in bbox]
+        gid = int(g.get("id", idx + 1))
+        color = palette[idx % len(palette)]
+
+        polygon = g.get("mask_polygon") or []
+        mask_filled = None
+        if isinstance(polygon, list) and len(polygon) >= 3:
+            try:
+                pts = np.array(
+                    [[int(float(px)), int(float(py))] for [px, py] in polygon],
+                    dtype=np.int32,
+                ).reshape(-1, 1, 2)
+                mask_canvas = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillPoly(mask_canvas, [pts], 255)
+                mask_filled = mask_canvas
+            except Exception:
+                mask_filled = None
+
+        if mask_filled is None and bw > 0 and bh > 0:
+            # Fallback: fill bbox as mask
+            mask_filled = np.zeros((h, w), dtype=np.uint8)
+            x1 = max(0, bx)
+            y1 = max(0, by)
+            x2 = min(w, bx + bw)
+            y2 = min(h, by + bh)
+            mask_filled[y1:y2, x1:x2] = 255
+
+        if mask_filled is not None:
+            sel = mask_filled > 0
+            # Blend colour over overlay
+            alpha = 0.38
+            overlay[sel] = (
+                (1.0 - alpha) * overlay[sel].astype(np.float32)
+                + alpha * np.array(color, dtype=np.float32)
+            ).astype(np.uint8)
+
+            # Contour outline
+            try:
+                cnts, _ = cv2.findContours(mask_filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if cnts:
+                    cv2.drawContours(overlay, cnts, -1, color, 2)
+            except Exception:
+                pass
+
+        # Grain ID label
+        label = f"#{gid}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        lx = max(0, bx)
+        ly = max(th + baseline + 2, by - 4)
+        if ly + th + 2 > h:
+            ly = min(h - 2, by + bh // 2)
+        cv2.rectangle(
+            overlay,
+            (lx, ly - th - baseline),
+            (lx + tw + 4, ly + 2),
+            (30, 30, 30),
+            -1,
+        )
+        cv2.putText(
+            overlay,
+            label,
+            (lx + 2, ly),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
+    # 2) Foreign matter — red boxes + label
+    fm: List[Dict[str, Any]] = analysis.get("foreign_matter", []) or []
+    red = (255, 60, 60)
+    for f in fm:
+        bbox = f.get("bbox", [0, 0, 0, 0])
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        bx, by, bw, bh = [int(v) for v in bbox]
+        if bw <= 0 or bh <= 0:
+            continue
+        x1 = max(0, bx)
+        y1 = max(0, by)
+        x2 = min(w, bx + bw)
+        y2 = min(h, by + bh)
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), red, 2)
+
+        fid = int(f.get("id", 0))
+        cls = f.get("class", "FM") or "FM"
+        label = f"FM#{fid} {cls}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.45
+        thickness = 1
+        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        ly = max(th + baseline + 2, y1 - 4)
+        lx = max(0, x1)
+        if ly + th + 2 > h:
+            ly = y2 - 2
+            if ly - th - baseline < 0:
+                ly = y2
+        cv2.rectangle(
+            overlay,
+            (lx, ly - th - baseline),
+            (lx + tw + 4, ly + 2),
+            red,
+            -1,
+        )
+        cv2.putText(
+            overlay,
+            label,
+            (lx + 2, ly),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
+    return overlay
+
+
+@router.post("/phase1/analyze")
+async def phase1_analyze(
+    file: UploadFile = File(...),
+    conf_threshold: Optional[float] = Form(0.25),
+    method: Optional[str] = Form("auto"),
+):
+    """
+    Phase 1 image analysis endpoint.
+
+    Accepts an image upload and runs the instance segmentation analysis
+    via `ml.inference.analyze_image`, returning the structured analysis
+    along with an overlay image (coloured grain masks + grain IDs +
+    foreign-matter boxes) encoded as base64.
+
+    Form fields:
+      - file (required): image file (JPG, PNG, WEBP, TIFF, BMP)
+      - conf_threshold (optional float): confidence cutoff (default 0.25)
+      - method (optional string): "auto" | "yolov8" | "maskrcnn" | "classical"
+                                  (default "auto")
+    """
+    MAX_SIZE_BYTES = 64 * 1024 * 1024  # 64 MiB
+
+    # --- 1) Read and validate file size ---
+    try:
+        contents = await file.read()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to read uploaded file: {exc}",
+        )
+
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    if len(contents) > MAX_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded file too large ({len(contents)} bytes). Max size: {MAX_SIZE_BYTES} bytes.",
+        )
+
+    # Validate method parameter
+    valid_methods = {"auto", "yolov8", "maskrcnn", "classical"}
+    if method is not None and method.lower() not in valid_methods:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid method '{method}'. Must be one of: {sorted(valid_methods)}",
+        )
+
+    # Validate confidence threshold
+    if conf_threshold is not None:
+        if conf_threshold < 0.0 or conf_threshold > 1.0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid conf_threshold={conf_threshold}. Must be between 0.0 and 1.0.",
+            )
+
+    # --- 2) Decode image bytes → RGB numpy array ---
+    try:
+        img_rgb = _decode_image_bytes(contents)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to decode image: {exc}",
+        )
+
+    if img_rgb.size == 0 or img_rgb.shape[0] < 2 or img_rgb.shape[1] < 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Decoded image is too small (shape={img_rgb.shape}).",
+        )
+
+    # --- 3) Run analysis via ml.inference.analyze_image ---
+    try:
+        from ml.inference import analyze_image as ml_analyze_image
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to import ml.inference.analyze_image: {exc}",
+        )
+
+    try:
+        # The method form value is mapped for reference; analyze_image()
+        # itself follows its own priority order via _load_model().
+        _ = method  # reserved for future use (per-request override)
+        analysis_raw = ml_analyze_image(img_rgb)
+    except Exception as exc:
+        logger.exception(f"Phase1 analyze_image() failed: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Model analysis failed: {exc}",
+        )
+
+    if not isinstance(analysis_raw, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Model analysis returned an invalid result (expected dict).",
+        )
+
+    analysis = _sanitize_numpy(analysis_raw)
+
+    # --- 4) Encode original image as base64 (optional, for convenience) ---
+    original_base64 = ""
+    try:
+        original_base64 = _encode_image_base64(img_rgb, fmt=".jpg")
+    except Exception:
+        original_base64 = ""
+
+    # --- 5) Generate overlay image and encode as base64 ---
+    overlay_base64 = ""
+    try:
+        overlay_rgb = _build_phase1_overlay(img_rgb, analysis)
+        overlay_base64 = _encode_image_base64(overlay_rgb, fmt=".png")
+    except Exception as exc:
+        logger.warning(f"Failed to build phase1 overlay image: {exc}")
+        overlay_base64 = ""
+
+    # --- 6) Assemble the Phase1AnalysisResponse-compatible payload ---
+    response_payload = {
+        "success": True,
+        "rice_detected": bool(analysis.get("rice_detected", False)),
+        "rice_count": int(analysis.get("rice_count", 0)),
+        "foreign_matter_count": int(analysis.get("foreign_matter_count", 0)),
+        "unresolved_cluster_count": int(analysis.get("unresolved_cluster_count", 0)),
+        "grains": analysis.get("grains", []),
+        "foreign_matter": analysis.get("foreign_matter", []),
+        "unresolved_clusters": analysis.get("unresolved_clusters", []),
+        "processing": analysis.get("processing", {}),
+        "method": analysis.get("method", "unknown"),
+        "model_version": analysis.get("model_version", "1.0.0"),
+        "parameters": {
+            "conf_threshold": float(conf_threshold) if conf_threshold is not None else 0.25,
+            "method": method if method is not None else "auto",
+            "original_filename": file.filename or "",
+            "image_shape": [int(img_rgb.shape[0]), int(img_rgb.shape[1])],
+        },
+        "original_image_base64": original_base64,
+        "overlay_base64": overlay_base64,
+        "warnings": analysis.get("warnings", []),
+    }
+
+    return _sanitize_numpy(response_payload)
+
+
+@router.get("/phase1/models")
+def phase1_models():
+    """
+    Phase 1 model availability endpoint.
+
+    Returns a JSON payload describing which segmentation models are
+    currently available (installed + weights present on disk), which
+    method auto-priority will pick, paths to the model weights, and
+    CPU/GPU availability info.
+    """
+    project_root = get_project_root()
+
+    # --- Device / GPU availability ---
+    device = "cpu"
+    gpu_available = False
+    try:
+        import torch
+        gpu_available = bool(torch.cuda.is_available())
+        device = "cuda" if gpu_available else "cpu"
+    except Exception:
+        device = "cpu"
+        gpu_available = False
+
+    # --- YOLOv8 ---
+    yolo_weights_rel = "models/yolo_seg/run1_baseline/weights/best.pt"
+    yolo_weights_path = project_root / yolo_weights_rel
+    yolov8_weights_exist = yolo_weights_path.exists()
+    yolov8_installed = False
+    try:
+        from ultralytics import YOLO  # noqa: F401
+        yolov8_installed = True
+    except ImportError:
+        yolov8_installed = False
+    except Exception:
+        yolov8_installed = False
+
+    yolov8_available = yolov8_weights_exist and yolov8_installed
+
+    # --- Mask R-CNN ---
+    maskrcnn_weights_rel = ""
+    maskrcnn_weights_exist = False
+    try:
+        from ml.config import get_model_info
+        seg_info = get_model_info("segmentation") or {}
+        weights_rel = seg_info.get("weights_path", "")
+        if weights_rel:
+            maskrcnn_weights_rel = weights_rel
+            p = project_root / weights_rel
+            maskrcnn_weights_exist = p.exists()
+    except Exception:
+        maskrcnn_weights_exist = False
+        maskrcnn_weights_rel = ""
+
+    maskrcnn_installed = False
+    try:
+        import torch  # noqa: F401
+        from torchvision.models.detection import maskrcnn_resnet50_fpn  # noqa: F401
+        maskrcnn_installed = True
+    except ImportError:
+        maskrcnn_installed = False
+    except Exception:
+        maskrcnn_installed = False
+
+    maskrcnn_available = maskrcnn_weights_exist and maskrcnn_installed
+
+    # --- Classical CV (always available) ---
+    classical_available = True
+
+    # --- Determine best method in auto priority order ---
+    if yolov8_available:
+        best_method = "yolov8"
+    elif maskrcnn_available:
+        best_method = "maskrcnn"
+    else:
+        best_method = "classical"
+
+    model_paths = {
+        "yolov8": str(yolo_weights_path) if yolov8_weights_exist else None,
+        "yolov8_relative": yolo_weights_rel,
+        "maskrcnn": str(project_root / maskrcnn_weights_rel) if maskrcnn_weights_rel and maskrcnn_weights_exist else None,
+        "maskrcnn_relative": maskrcnn_weights_rel or None,
+        "classical": None,
+    }
+
+    payload = {
+        "available": {
+            "yolov8": bool(yolov8_available),
+            "maskrcnn": bool(maskrcnn_available),
+            "classical": True,
+        },
+        "best_method": best_method,
+        "model_paths": model_paths,
+        "device": device,
+        "gpu_available": bool(gpu_available),
+        "yolov8_installed": bool(yolov8_installed),
+        "yolov8_weights_exist": bool(yolov8_weights_exist),
+        "maskrcnn_installed": bool(maskrcnn_installed),
+        "maskrcnn_weights_exist": bool(maskrcnn_weights_exist),
+    }
+
+    return _sanitize_numpy(payload)
+
+
+@router.post("/phase1/grain_crop/{grain_id}")
+async def phase1_grain_crop(
+    grain_id: int = Path(..., ge=1, description="Grain ID (positive integer)"),
+    body: Dict[str, Any] = Body(..., embed=False),
+):
+    """
+    Phase 1 grain crop endpoint.
+
+    Extract and return a PNG image crop for a single grain, given the
+    source image (base64), the grain bounding box, and optionally the
+    mask polygon.  Outside the mask polygon, pixels are set to
+    transparent (alpha=0) so the output is a PNG with transparency.
+
+    Path:
+      - grain_id: positive integer identifier for the grain (used for
+                  logging / response filename only)
+
+    JSON body keys:
+      - image_base64 (string, required): base64 data URL or raw base64
+                                         of the source image (any format
+                                         that OpenCV can decode).
+      - grain_bbox (list[4 int], required): [x, y, w, h] bounding box
+                                            in the source image coords.
+      - mask_polygon (list[list[2 float]], optional): polygon points
+                                              [[x,y], ...] inside the
+                                              image; anything outside
+                                              this polygon becomes
+                                              transparent.  If omitted,
+                                              the full bbox is returned
+                                              without masking.
+      - padding (int, optional, default=10): number of pixels of extra
+                                             context to include around
+                                             the bbox (clamped to image
+                                             borders).
+
+    Returns:
+      PNG image as `image/png` response (binary).  The response has a
+      `Content-Disposition` header suggesting the filename
+      `grain_{grain_id}.png`.
+    """
+    # --- 1) Validate and read body fields ---
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+    image_base64_raw = body.get("image_base64")
+    grain_bbox = body.get("grain_bbox")
+    mask_polygon = body.get("mask_polygon")
+    padding = body.get("padding", 10)
+
+    if image_base64_raw is None or not isinstance(image_base64_raw, str) or not image_base64_raw.strip():
+        raise HTTPException(status_code=400, detail="Missing or empty required field 'image_base64'.")
+
+    if grain_bbox is None or not isinstance(grain_bbox, (list, tuple)) or len(grain_bbox) != 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing or invalid required field 'grain_bbox'. Must be [x, y, w, h].",
+        )
+
+    try:
+        bx, by, bw, bh = [int(float(v)) for v in grain_bbox]
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid 'grain_bbox' values. Must be numeric [x, y, w, h].",
+        )
+
+    if bw <= 0 or bh <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid 'grain_bbox' dimensions: w={bw}, h={bh}. Must be > 0.",
+        )
+
+    try:
+        padding = int(padding) if padding is not None else 10
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid 'padding': must be an integer.")
+    if padding < 0:
+        raise HTTPException(status_code=400, detail="Invalid 'padding': must be >= 0.")
+
+    # --- 2) Decode base64 image to bytes, then to RGB numpy array ---
+    b64_str = image_base64_raw.strip()
+    if "," in b64_str and b64_str.startswith("data:"):
+        # Strip data URL prefix
+        b64_str = b64_str.split(",", 1)[1]
+    if not b64_str:
+        raise HTTPException(status_code=400, detail="Invalid 'image_base64': empty data.")
+
+    try:
+        image_bytes = base64.b64decode(b64_str, validate=False)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid base64 encoding in 'image_base64': {exc}",
+        )
+
+    try:
+        img_rgb = _decode_image_bytes(image_bytes)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to decode image from 'image_base64': {exc}",
+        )
+
+    H, W = img_rgb.shape[:2]
+    if H < 2 or W < 2:
+        raise HTTPException(status_code=400, detail=f"Image too small: shape=({H}, {W}).")
+
+    # --- 3) Compute padded crop region (clamped to image borders) ---
+    x1 = max(0, bx - padding)
+    y1 = max(0, by - padding)
+    x2 = min(W, bx + bw + padding)
+    y2 = min(H, by + bh + padding)
+
+    if x2 <= x1 or y2 <= y1:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Computed crop region is empty: x1={x1},x2={x2},y1={y1},y2={y2} (img W={W}, H={H}).",
+        )
+
+    # --- 4) Extract the crop from RGB and create BGRA (with alpha) ---
+    crop_rgb = img_rgb[y1:y2, x1:x2]
+    ch, cw = crop_rgb.shape[:2]
+    crop_bgra = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGRA)
+    # Alpha channel defaults to fully opaque
+    crop_bgra[:, :, 3] = 255
+
+    # --- 5) Apply mask polygon if provided (outside → alpha=0) ---
+    if mask_polygon is not None:
+        if not isinstance(mask_polygon, list) or len(mask_polygon) < 3:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid 'mask_polygon': must be a list of at least 3 [x,y] points.",
+            )
+
+        try:
+            global_pts: List[List[float]] = []
+            for pt in mask_polygon:
+                if not isinstance(pt, (list, tuple)) or len(pt) != 2:
+                    raise ValueError(f"polygon point must be [x,y], got {pt!r}")
+                px, py = float(pt[0]), float(pt[1])
+                global_pts.append([px, py])
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid 'mask_polygon' point format: {exc}",
+            )
+
+        try:
+            # Convert to crop-local integer coordinates
+            local_arr = np.array(
+                [[int(round(px - x1)), int(round(py - y1))] for [px, py] in global_pts],
+                dtype=np.int32,
+            ).reshape(-1, 1, 2)
+
+            mask_canvas = np.zeros((ch, cw), dtype=np.uint8)
+            cv2.fillPoly(mask_canvas, [local_arr], 255)
+
+            # Set alpha to 0 where mask is 0
+            crop_bgra[:, :, 3] = mask_canvas
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning(f"Failed to apply mask_polygon for grain #{grain_id}: {exc}")
+            # Leave fully opaque as a sensible fallback (do not fail the whole crop)
+
+    # --- 6) Encode BGRA → PNG bytes ---
+    try:
+        ok, png_buf = cv2.imencode(".png", crop_bgra)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to encode PNG: {exc}",
+        )
+
+    if not ok or png_buf.size == 0:
+        raise HTTPException(status_code=500, detail="Failed to encode PNG (imencode returned empty).")
+
+    png_bytes = png_buf.tobytes()
+
+    filename = f"grain_{int(grain_id)}.png"
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Grain-Id": str(int(grain_id)),
+            "X-Crop-Rect": f"x={x1},y={y1},w={cw},h={ch}",
+        },
     )

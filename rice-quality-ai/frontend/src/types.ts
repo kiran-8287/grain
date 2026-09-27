@@ -311,3 +311,47 @@ export interface AnalysisResult {
   warnings: string[];
   processing_time_seconds: number;
 }
+
+// Phase 1 Instance Segmentation types
+export interface Phase1GrainInstance {
+  id: number;
+  confidence: number;
+  confidence_label: 'HIGH' | 'MEDIUM' | 'LOW';
+  bbox: [number, number, number, number];
+  mask_polygon: Array<[number, number]>;
+  centroid: [number, number];
+  area_pixels: number;
+  is_touching: boolean;
+  segmentation_method: string;
+}
+
+export interface Phase1ForeignMatterInstance {
+  id: number;
+  class: string;
+  confidence: number;
+  bbox: [number, number, number, number];
+}
+
+export interface Phase1ProcessingStats {
+  inference_ms: number;
+  total_ms: number;
+  tiling_used: boolean;
+  num_tiles: number;
+}
+
+export interface Phase1AnalysisResponse {
+  success: boolean;
+  rice_detected: boolean;
+  rice_count: number;
+  foreign_matter_count: number;
+  unresolved_cluster_count: number;
+  grains: Phase1GrainInstance[];
+  foreign_matter: Phase1ForeignMatterInstance[];
+  unresolved_clusters: any[];
+  processing: Phase1ProcessingStats;
+  method: string;
+  model_version: string;
+  error?: string;
+  image_base64?: string;
+  overlay_base64?: string;
+}
