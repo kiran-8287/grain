@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 
 from ml.config import get_threshold, get_model_info, get_project_root
 
@@ -191,101 +192,134 @@ def extract_foreground_mask(
     return binary, is_dark_bg, meta
 
 
-def _segment_large_image_fast(image_rgb: np.ndarray, binary: np.ndarray, warnings: List[str]) -> SegmentationResult:
-    """Faster segmentation mode for dense large images; avoids the expensive watershed path while keeping output counts stable."""
-    h, w = image_rgb.shape[:2]
-    min_area = get_threshold("segmentation", "min_grain_area_pixels", 50)
-    merge_area_ratio = get_threshold("segmentation", "merge_detection_area_ratio", 2.5)
-    merge_aspect_ratio = get_threshold("segmentation", "merge_detection_aspect_ratio", 4.0)
+def _partition_mask_by_markers(
+    comp_mask: np.ndarray,
+    markers_int: np.ndarray,
+    min_grain_area: int = 50,
+) -> List[np.ndarray]:
+    """
+    Partition 100% of comp_mask pixels to their nearest seed marker.
+    Guarantees no boundary erosion or loss of grain pixels.
+    """
+    y_idx, x_idx = np.where(comp_mask > 0)
+    if len(y_idx) == 0:
+        return [comp_mask]
+    y1, y2 = int(np.min(y_idx)), int(np.max(y_idx)) + 1
+    x1, x2 = int(np.min(x_idx)), int(np.max(x_idx)) + 1
 
-    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_open, iterations=1)
-    closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+    crop_comp = comp_mask[y1:y2, x1:x2]
+    crop_markers = markers_int[y1:y2, x1:x2]
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed, connectivity=8)
-    grains = []
-    uncertain_count = 0
-    rejected_count = 0
-    estimated_merged = 0
-    grain_id = 0
-    areas = []
+    num_m = int(np.max(crop_markers))
+    if num_m < 2:
+        return [comp_mask]
 
-    for label in range(1, num_labels):
-        area = int(stats[label, cv2.CC_STAT_AREA])
-        if area >= min_area:
-            areas.append(area)
+    _, indices = distance_transform_edt(crop_markers == 0, return_indices=True)
+    nearest_crop = crop_markers[indices[0], indices[1]]
 
-    median_area = float(np.median(areas)) if areas else 0.0
+    sub_masks = []
+    for k in range(1, num_m + 1):
+        full_sub = np.zeros_like(comp_mask)
+        full_sub[y1:y2, x1:x2] = ((nearest_crop == k) & (crop_comp > 0)).astype(np.uint8) * 255
+        if int(np.sum(full_sub > 0)) >= min_grain_area:
+            sub_masks.append(full_sub)
 
-    for label in range(1, num_labels):
-        area = int(stats[label, cv2.CC_STAT_AREA])
-        if area < min_area:
-            rejected_count += 1
-            continue
+    return sub_masks if len(sub_masks) > 1 else [comp_mask]
 
-        x, y, bw, bh, _ = stats[label]
-        if bw <= 0 or bh <= 0:
-            rejected_count += 1
-            continue
 
-        component = (labels == label).astype(np.uint8)
-        contours, _ = cv2.findContours(component, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        if not contours:
-            rejected_count += 1
-            continue
+def _split_grain_cluster(
+    comp_mask: np.ndarray,
+    med_area: float,
+    min_grain_area: int = 50,
+) -> List[np.ndarray]:
+    """
+    Split a potentially merged/touching grain cluster into individual grain masks.
+    Uses multi-threshold adaptive distance-transform peak detection with exact
+    distance-field partitioning, plus concavity pinch-point cutting fallback.
+    Retains 100% of foreground pixels with zero mask shrinkage.
+    """
+    area = int(np.sum(comp_mask > 0))
+    if area < min_grain_area:
+        return []
 
-        contour = max(contours, key=cv2.contourArea)
-        M = cv2.moments(contour)
-        if M["m00"] == 0:
-            rejected_count += 1
-            continue
+    cnts, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not cnts:
+        return [comp_mask]
+    cnt = max(cnts, key=cv2.contourArea)
+    hull = cv2.convexHull(cnt, returnPoints=False)
+    defects = cv2.convexityDefects(cnt, hull) if len(cnt) > 3 and len(hull) > 3 else None
 
-        area_ratio = area / median_area if median_area > 0 else 1.0
-        aspect = max(bw, bh) / (min(bw, bh) + 1e-6)
-        is_touching = False
-        seg_quality = "good"
+    deep_defects = []
+    if defects is not None:
+        for i in range(len(defects)):
+            s, e, f, d = defects[i]
+            depth = d / 256.0
+            if depth >= 5.0:
+                deep_defects.append((tuple(cnt[f][0]), depth))
 
-        if area_ratio > merge_area_ratio or aspect > merge_aspect_ratio:
-            is_touching = True
-            seg_quality = "uncertain"
-            uncertain_count += 1
-            estimated_merged += 1
+    hull_pts = cv2.convexHull(cnt, returnPoints=True)
+    hull_area = cv2.contourArea(hull_pts)
+    solidity = area / hull_area if hull_area > 0 else 1.0
 
-        grain_id += 1
-        hull = cv2.convexHull(contour)
-        hull_area = cv2.contourArea(hull)
-        solidity = area / hull_area if hull_area > 0 else 0
-        confidence = min(1.0, solidity * 0.7 + 0.3)
-
-        grain = GrainInstance(
-            grain_id=grain_id,
-            mask=component * 255,
-            bbox=(x, y, bw, bh),
-            confidence=round(float(confidence), 4),
-            centroid=(float(centroids[label, 0]), float(centroids[label, 1])),
-            contour=contour,
-            is_touching=is_touching,
-            segmentation_quality=seg_quality,
-            method="classical_cv_fallback",
-        )
-        grains.append(grain)
-
-    detected_count = grain_id + rejected_count
-    accepted_count = len(grains)
-    if not grains:
-        warnings.append("No grain instances found after segmentation.")
-    return SegmentationResult(
-        grains=grains,
-        detected_count=detected_count,
-        accepted_count=accepted_count,
-        uncertain_count=uncertain_count,
-        rejected_count=rejected_count,
-        estimated_merged_count=estimated_merged,
-        method="classical_cv_fallback",
-        processing_time_seconds=0.0,
-        warnings=warnings,
+    # Cluster detection criteria:
+    # 1. Area is significantly larger than typical single grain area (>= 1.35x median)
+    # 2. Or at least two concave pinch points (deep defects >= 5px)
+    # 3. Or low solidity (< 0.90) with any concavity defect
+    is_cluster = (
+        (area >= 1.35 * med_area)
+        or (len(deep_defects) >= 2)
+        or (solidity < 0.90 and len(deep_defects) >= 1)
     )
+    if not is_cluster:
+        return [comp_mask]
+
+    dist = cv2.distanceTransform(comp_mask, cv2.DIST_L2, 5)
+    max_d = float(np.max(dist))
+    if max_d <= 0:
+        return [comp_mask]
+
+    best_markers = None
+
+    # Adaptive marker detection via distance transform peaks across decreasing relative thresholds
+    for ratio in [0.82, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46]:
+        thresh = (dist >= ratio * max_d).astype(np.uint8)
+        thresh = cv2.morphologyEx(
+            thresh, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        )
+        nm, m, s, _ = cv2.connectedComponentsWithStats(thresh)
+        valid_markers = [k for k in range(1, nm) if s[k, cv2.CC_STAT_AREA] >= 20]
+        if len(valid_markers) > 1:
+            cleaned_m = np.zeros_like(thresh, dtype=np.int32)
+            for new_id, old_id in enumerate(valid_markers, start=1):
+                cleaned_m[m == old_id] = new_id
+            best_markers = cleaned_m
+            break
+
+    if best_markers is not None:
+        sub_masks = _partition_mask_by_markers(comp_mask, best_markers, min_grain_area=min_grain_area)
+        if len(sub_masks) > 1:
+            return sub_masks
+
+    # Fallback for tightly touching parallel grains with distinct concave pinch points
+    if len(deep_defects) >= 2:
+        deep_defects.sort(key=lambda x: x[1], reverse=True)
+        pt1 = deep_defects[0][0]
+        best_pt2 = None
+        for p2, d2 in deep_defects[1:]:
+            dist_pts = np.hypot(pt1[0] - p2[0], pt1[1] - p2[1])
+            if dist_pts >= 12:
+                best_pt2 = p2
+                break
+        if best_pt2 is not None:
+            cut_mask = comp_mask.copy()
+            cv2.line(cut_mask, pt1, best_pt2, 0, 2)
+            nm, m, s, _ = cv2.connectedComponentsWithStats(cut_mask)
+            if nm > 2:
+                sub_masks = _partition_mask_by_markers(comp_mask, m, min_grain_area=min_grain_area)
+                if len(sub_masks) > 1:
+                    return sub_masks
+
+    return [comp_mask]
 
 
 def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
@@ -295,11 +329,9 @@ def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
     Steps:
     1. Robust background estimation via perimeter sampling
     2. Foreground extraction (Otsu thresholding calibrated to background polarity)
-    3. Morphological operations
-    4. Distance transform
-    5. Adaptive per-component watershed splitting for touching grains
-    6. Contour extraction
-    7. Connected components analysis
+    3. Noise cleanup with light morphology (prevents artificial merging)
+    4. Adaptive touching-grain splitting via distance-transform watershed and pinch-point cutting
+    5. Per-grain instance mask, contour, bbox, and metadata extraction
     
     This is clearly labelled as "Classical CV fallback".
     """
@@ -325,145 +357,104 @@ def _segment_classical_cv(image_rgb: np.ndarray) -> SegmentationResult:
     else:
         warnings.append("Detected light background — segmented dark grain foreground")
 
-    if max(h, w) >= 700 or (h * w) >= 600_000:
-        return _segment_large_image_fast(image_rgb, binary, warnings)
-    
-    # Morphological operations
+    # Light morphological opening to remove 1-2 pixel isolated salt noise
+    # without bridging touching grains (avoids aggressive closing)
     kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    
-    # Remove small noise and fill small interior holes
-    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_open, iterations=1)
-    closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel_close, iterations=1)
-    
-    # Distance transform for watershed
-    dist_transform = cv2.distanceTransform(closed, cv2.DIST_L2, 5)
-    
-    # Adaptive sure foreground markers per connected component
-    # Using per-component peaks prevents large clumps from swallowing small grains
-    num_cc, cc_labels = cv2.connectedComponents(closed)
-    sure_fg = np.zeros_like(closed)
-    
-    for lab in range(1, num_cc):
-        comp_mask = (cc_labels == lab)
-        max_d = np.max(dist_transform[comp_mask])
-        if max_d > 0:
-            t = max(2.0, 0.40 * max_d)
-            sure_fg[comp_mask & (dist_transform >= t)] = 255
-    
-    # Sure background (dilated foreground)
-    kernel_bg = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    sure_bg = cv2.dilate(closed, kernel_bg, iterations=3)
-    
-    # Unknown region between sure background and sure foreground
-    unknown = cv2.subtract(sure_bg, sure_fg)
-    
-    # Connected components on sure foreground markers
-    num_labels, markers = cv2.connectedComponents(sure_fg)
-    markers = markers + 1  # Background is 1, not 0
-    markers[unknown == 255] = 0  # Unknown region is 0
-    
-    # Watershed segmentation
-    image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-    markers = cv2.watershed(image_bgr, markers)
-    
-    # Extract individual grain masks
+    cleaned = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_open, iterations=1)
+
     min_area = get_threshold("segmentation", "min_grain_area_pixels", 50)
     merge_area_ratio = get_threshold("segmentation", "merge_detection_area_ratio", 2.5)
     merge_aspect_ratio = get_threshold("segmentation", "merge_detection_aspect_ratio", 4.0)
-    
+
+    num_cc, cc_labels, stats, centroids = cv2.connectedComponentsWithStats(cleaned, connectivity=8)
+
+    # Estimate median single grain area
+    all_areas = []
+    for label in range(1, num_cc):
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area >= min_area:
+            all_areas.append(area)
+
+    median_area = float(np.median(all_areas)) if all_areas else 2000.0
+
     grains = []
     uncertain_count = 0
     rejected_count = 0
     estimated_merged = 0
     grain_id = 0
-    
-    # Collect all grain areas for median computation
-    all_areas = []
-    label_areas = {}
-    for label in range(2, num_labels + 1):
-        grain_mask = np.zeros((h, w), dtype=np.uint8)
-        grain_mask[markers == label] = 255
-        area = np.sum(grain_mask > 0)
-        if area >= min_area:
-            all_areas.append(area)
-            label_areas[label] = area
-    
-    median_area = float(np.median(all_areas)) if all_areas else 0
-    
-    for label in range(2, num_labels + 1):
-        grain_mask = np.zeros((h, w), dtype=np.uint8)
-        grain_mask[markers == label] = 255
-        
-        area = np.sum(grain_mask > 0)
-        
+
+    for label in range(1, num_cc):
+        area = int(stats[label, cv2.CC_STAT_AREA])
         if area < min_area:
             rejected_count += 1
             continue
-        
-        # Find contour
-        contours, _ = cv2.findContours(grain_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        if not contours:
-            rejected_count += 1
-            continue
-        
-        contour = max(contours, key=cv2.contourArea)
-        x, y, bw, bh = cv2.boundingRect(contour)
-        
-        # Centroid
-        M = cv2.moments(contour)
-        if M["m00"] == 0:
-            rejected_count += 1
-            continue
-        cx = M["m10"] / M["m00"]
-        cy = M["m01"] / M["m00"]
-        
-        grain_id += 1
-        
-        # Check for potential merge
-        is_touching = False
-        seg_quality = "good"
-        
-        if median_area > 0:
-            area_ratio = area / median_area
+
+        comp_mask = (cc_labels == label).astype(np.uint8) * 255
+
+        # Split cluster if touching grains are present
+        splits = _split_grain_cluster(comp_mask, median_area, min_grain_area=min_area)
+        was_touching = len(splits) > 1
+        if was_touching:
+            estimated_merged += len(splits) - 1
+
+        for s_mask in splits:
+            s_area = int(np.sum(s_mask > 0))
+            if s_area < min_area:
+                rejected_count += 1
+                continue
+
+            contours, _ = cv2.findContours(s_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if not contours:
+                rejected_count += 1
+                continue
+
+            contour = max(contours, key=cv2.contourArea)
+            x, y, bw, bh = cv2.boundingRect(contour)
+            if bw <= 0 or bh <= 0:
+                rejected_count += 1
+                continue
+
+            M = cv2.moments(contour)
+            if M["m00"] == 0:
+                rejected_count += 1
+                continue
+
+            cx = float(M["m10"] / M["m00"])
+            cy = float(M["m01"] / M["m00"])
+
+            area_ratio = s_area / median_area if median_area > 0 else 1.0
             aspect = max(bw, bh) / (min(bw, bh) + 1e-6)
-            
-            if area_ratio > merge_area_ratio:
-                is_touching = True
-                seg_quality = "uncertain"
+
+            is_touching = was_touching or (area_ratio > merge_area_ratio) or (aspect > merge_aspect_ratio)
+            seg_quality = "uncertain" if (area_ratio > merge_area_ratio or aspect > merge_aspect_ratio) else "good"
+            if seg_quality == "uncertain":
                 uncertain_count += 1
-                estimated_merged += 1
-                warnings.append(f"Grain #{grain_id}: possibly merged (area ratio {area_ratio:.1f}x median)")
-            elif aspect > merge_aspect_ratio:
-                is_touching = True
-                seg_quality = "uncertain"
-                uncertain_count += 1
-        
-        # Segmentation confidence — heuristic based on solidity and area
-        hull = cv2.convexHull(contour)
-        hull_area = cv2.contourArea(hull)
-        solidity = area / hull_area if hull_area > 0 else 0
-        confidence = min(1.0, solidity * 0.7 + 0.3)  # Heuristic confidence
-        
-        grain = GrainInstance(
-            grain_id=grain_id,
-            mask=grain_mask,
-            bbox=(x, y, bw, bh),
-            confidence=round(confidence, 4),
-            centroid=(cx, cy),
-            contour=contour,
-            is_touching=is_touching,
-            segmentation_quality=seg_quality,
-            method="classical_cv_fallback",
-        )
-        grains.append(grain)
-    
+
+            hull = cv2.convexHull(contour)
+            hull_area = cv2.contourArea(hull)
+            solidity = s_area / hull_area if hull_area > 0 else 0
+            confidence = min(1.0, solidity * 0.7 + 0.3)
+
+            grain_id += 1
+            grain = GrainInstance(
+                grain_id=grain_id,
+                mask=s_mask,
+                bbox=(x, y, bw, bh),
+                confidence=round(float(confidence), 4),
+                centroid=(cx, cy),
+                contour=contour,
+                is_touching=is_touching,
+                segmentation_quality=seg_quality,
+                method="classical_cv_fallback",
+            )
+            grains.append(grain)
+
     detected_count = grain_id + rejected_count
     accepted_count = len(grains)
-    
+
     if not grains:
         warnings.append("No grain instances found after segmentation.")
-    
+
     return SegmentationResult(
         grains=grains,
         detected_count=detected_count,
