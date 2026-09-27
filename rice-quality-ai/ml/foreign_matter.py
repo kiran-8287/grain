@@ -259,12 +259,24 @@ def _detect_foreign_heuristic(
         for gm in grain_masks:
             if gm.shape == (h, w):
                 rice_mask = cv2.bitwise_or(rice_mask, gm)
+
+    padding = max(
+        0,
+        int(get_threshold("foreign_matter", "grain_mask_exclusion_padding_pixels", 3)),
+    )
+    if padding:
+        kernel_size = padding * 2 + 1
+        padding_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
+        )
+        rice_mask = cv2.dilate(rice_mask, padding_kernel, iterations=1)
     
     # Look for objects that are NOT rice using the same background-aware foreground mask
     from ml.segmentation import extract_foreground_mask
     binary, _, _ = extract_foreground_mask(image_rgb)
     
-    # Remove rice grain regions from the binary
+    # Exclude each rice mask plus a small edge tolerance so segmentation
+    # boundary differences are not reported as foreign-matter fragments.
     non_rice = cv2.bitwise_and(binary, cv2.bitwise_not(rice_mask))
     
     # Find non-rice contours

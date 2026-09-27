@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 from ml.config import get_threshold
+from ml.foreign_matter import _detect_foreign_heuristic
 from ml.pipeline import RiceQualityPipeline
 from ml.rice_gate import load_project_class_mappings
 
@@ -86,6 +87,22 @@ def create_rice_grain_image(img_size: int = 600) -> bytes:
         img, (img_size // 2, img_size // 2), (70, 24), 20, 0, 360, (235, 235, 235), -1
     )
     return _encode(img)
+
+
+def test_foreign_heuristic_ignores_rice_mask_edge_fringe():
+    image = np.zeros((240, 320, 3), dtype=np.uint8)
+    grain_mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    cv2.ellipse(image, (150, 120), (70, 24), 27, 0, 360, (235, 235, 235), -1)
+    cv2.ellipse(grain_mask, (150, 120), (70, 24), 27, 0, 360, 255, -1)
+    slightly_eroded_mask = cv2.erode(
+        grain_mask,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+        iterations=1,
+    )
+
+    result = _detect_foreign_heuristic(image, [slightly_eroded_mask])
+
+    assert result.objects == []
 
 
 def create_rice_plus_stone_image(img_size: int = 700) -> bytes:

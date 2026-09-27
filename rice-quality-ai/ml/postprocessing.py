@@ -174,6 +174,13 @@ def render_phase1_overlay(
             mask_filled[y1:y2, x1:x2] = 255
 
         if mask_filled is not None:
+            mask_y, mask_x = np.where(mask_filled > 0)
+            if mask_x.size:
+                bx = int(mask_x.min())
+                by = int(mask_y.min())
+                bw = int(mask_x.max() - bx + 1)
+                bh = int(mask_y.max() - by + 1)
+
             sel = mask_filled > 0
             overlay[sel] = (
                 (1.0 - alpha) * overlay[sel].astype(np.float32)
@@ -192,6 +199,13 @@ def render_phase1_overlay(
                     cv2.drawContours(overlay, cnts, -1, outline_color, 2)
             except Exception:
                 pass
+
+            if bw > 0 and bh > 0:
+                x1 = max(0, min(w - 1, bx))
+                y1 = max(0, min(h - 1, by))
+                x2 = max(0, min(w - 1, bx + bw - 1))
+                y2 = max(0, min(h - 1, by + bh - 1))
+                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1)
 
         # Grain ID label — top-left of the bbox, on a dark pill so it stays
         # readable even on dark rice samples.

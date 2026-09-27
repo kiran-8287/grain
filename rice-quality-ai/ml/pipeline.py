@@ -255,6 +255,12 @@ class RiceQualityPipeline:
             if mask is None:
                 continue
             area = int(np.sum(mask > 0))
+            mask_y, mask_x = np.where(mask > 0)
+            if mask_x.size:
+                bx = int(mask_x.min())
+                by = int(mask_y.min())
+                bw = int(mask_x.max() - bx + 1)
+                bh = int(mask_y.max() - by + 1)
             if area <= 0 and bw * bh > 0:
                 area = bw * bh
 
@@ -392,11 +398,7 @@ class RiceQualityPipeline:
         seg_rejected = 0
 
         try:
-            phase1_result = phase1_analyze_image(
-                rgb_np=image_rgb,
-                return_overlay=False,
-                include_confidence_label=True,
-            )
+            phase1_result = phase1_analyze_image(image_rgb)
             if not isinstance(phase1_result, dict):
                 raise RuntimeError(
                     f"phase1_analyze_image returned non-dict: {type(phase1_result)}"
@@ -790,8 +792,8 @@ class RiceQualityPipeline:
 
         sample_summary = {
             "total_rice_grains": n_grains,
-            "uncertain_grains": seg_result.uncertain_count,
-            "rejected_grains": seg_result.rejected_count,
+            "uncertain_grains": seg_uncertain,
+            "rejected_grains": seg_rejected,
             "foreign_matter_count": fm_result.foreign_object_count,
             "admixture_percentage": (
                 admixture_res.get("admixture_percentage")
@@ -865,7 +867,7 @@ class RiceQualityPipeline:
             image_rgb=image_rgb,
             grain_areas=grain_areas,
             grain_confidences=grain_confidences,
-            uncertain_count=seg_result.uncertain_count,
+            uncertain_count=seg_uncertain,
             total_count=n_grains,
             segmentation_qualities=seg_qualities,
             grain_mask=grain_quality_mask,

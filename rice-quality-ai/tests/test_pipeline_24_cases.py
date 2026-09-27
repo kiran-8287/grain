@@ -96,6 +96,45 @@ def test_case_1_valid_1_grain_image(pipeline):
     assert any("Sample size: 1 grain" in w for w in res["warnings"])
 
 
+def test_main_pipeline_uses_phase1_inference(pipeline, monkeypatch):
+    import ml.pipeline as pipeline_module
+
+    original_analyze_image = pipeline_module.phase1_analyze_image
+    calls = []
+
+    def track_analyze_image(image):
+        calls.append(image.shape)
+        return original_analyze_image(image)
+
+    monkeypatch.setattr(pipeline_module, "phase1_analyze_image", track_analyze_image)
+    result = pipeline.analyze(create_synthetic_rice_image(num_grains=1, img_size=300))
+
+    assert calls
+    assert result["success"] is True
+    assert result["segmentation_info"]["source"] == "phase1_cascade"
+    assert result["sample"]["total_detected"] == 1
+    assert result["foreign_matter"] == []
+
+
+def test_phase1_overlay_does_not_fill_bounding_box():
+    from ml.postprocessing import render_phase1_overlay
+
+    image = np.zeros((80, 80, 3), dtype=np.uint8)
+    grain = {
+        "id": 1,
+        "bbox": [5, 5, 61, 61],
+        "confidence": 0.95,
+        "confidence_label": "HIGH",
+        "mask_polygon": [[30, 10], [50, 30], [30, 50], [10, 30]],
+    }
+
+    overlay = render_phase1_overlay(image, [grain], include_legend=False)
+
+    assert np.array_equal(overlay[6, 6], image[6, 6])
+    assert not np.array_equal(overlay[30, 30], image[30, 30])
+    assert not np.array_equal(overlay[11, 50], image[11, 50])
+
+
 # 2. Valid 5-grain image
 def test_case_2_valid_5_grain_image(pipeline):
     img_bytes = create_synthetic_rice_image(num_grains=5, img_size=400)

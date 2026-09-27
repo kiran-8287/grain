@@ -60,6 +60,7 @@
   "foreign_matter": {
     "confidence_threshold": 0.4,
     "nms_threshold": 0.45,
+    "grain_mask_exclusion_padding_pixels": 3,
     "_source": "engineering_heuristic"
   },
 
