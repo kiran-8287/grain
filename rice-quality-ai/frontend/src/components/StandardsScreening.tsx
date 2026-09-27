@@ -1,6 +1,6 @@
 import React from 'react';
 import { StandardsResult } from '../types';
-import { ShieldCheck, AlertCircle, HelpCircle, FileText, CheckCircle2, XCircle } from 'lucide-react';
+import { AlertCircle, HelpCircle, FileText, CheckCircle2, XCircle } from 'lucide-react';
 
 interface StandardsScreeningProps {
   standards: StandardsResult;
@@ -91,24 +91,7 @@ export const StandardsScreening: React.FC<StandardsScreeningProps> = ({ standard
         </table>
       </div>
 
-      {/* Section 24: Formal Official Grade Status */}
-      <div className="bg-surface-subtle border border-border rounded-xl p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-brand" />
-          <h4 className="text-sm font-bold text-text-primary">Formal Official Grade Status</h4>
-        </div>
-        <p className="text-xs text-text-secondary font-medium">
-          {official_grade.status}
-        </p>
-        <p className="text-xs text-text-secondary leading-relaxed">
-          {official_grade.reason}
-        </p>
-        {official_grade.disclaimer && (
-          <p className="text-[11px] text-text-muted border-t border-border pt-2 italic">
-            Note: {official_grade.disclaimer}
-          </p>
-        )}
-      </div>
+
     </div>
   );
 };

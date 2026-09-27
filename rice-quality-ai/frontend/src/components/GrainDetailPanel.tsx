@@ -219,24 +219,6 @@ export const GrainDetailPanel: React.FC<GrainDetailPanelProps> = ({ grain, unit 
         </div>
       </div>
 
-      {/* Sample-Level Parameters Distinction */}
-      <div className="p-3 bg-surface-subtle border border-border rounded-xl text-xs space-y-2">
-        <span className="text-[11px] font-semibold text-text-primary block">Sample-Level Parameters (Not Per-Grain):</span>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-surface p-2 rounded border border-border">
-            <span className="text-[10px] text-text-muted block">Foreign Matter</span>
-            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
-          </div>
-          <div className="bg-surface p-2 rounded border border-border">
-            <span className="text-[10px] text-text-muted block">Admixture</span>
-            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
-          </div>
-          <div className="bg-surface p-2 rounded border border-border">
-            <span className="text-[10px] text-text-muted block">Total Count</span>
-            <span className="text-[11px] font-medium text-brand">Sample-level parameter</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

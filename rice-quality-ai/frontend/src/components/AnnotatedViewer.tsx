@@ -83,15 +83,15 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
       </div>
 
       {/* Image Canvas Container */}
-      <div className="relative overflow-auto p-4 flex items-center justify-center min-h-[380px] max-h-[560px] bg-surface-subtle">
+      <div className="relative overflow-auto p-4 flex items-center justify-center min-h-[380px] bg-surface-subtle">
         <div
           style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-          className="transition-transform duration-200"
+          className="transition-transform duration-200 w-full"
         >
           <img
             src={annotatedImageUrl}
             alt="Annotated Rice Grains"
-            className="rounded-lg shadow-sm max-w-full h-auto object-contain border border-border"
+            className="block w-full max-w-full h-auto object-contain rounded-lg shadow-sm border border-border"
           />
         </div>
       </div>

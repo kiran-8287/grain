@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Sliders, CheckCircle2, AlertCircle, FileUp, Sparkles } from 'lucide-react';
+import { Upload, Image as ImageIcon, Sliders, CheckCircle2, AlertCircle, FileUp } from 'lucide-react';
 
 interface UploadSectionProps {
   onAnalyze: (file: File, options: { grade: string; referencePixels?: number; referenceMm?: number }) => void;
@@ -56,63 +56,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
     });
   };
 
-  const createDemoSample = (type: 'single' | 'multi' | 'foreign') => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 600;
-    canvas.height = 600;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = '#F2F5F2';
-    ctx.fillRect(0, 0, 600, 600);
-
-    const drawGrain = (x: number, y: number, radX: number, radY: number, rot: number, color = '#FFFFFF') => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, radX, radY, 0, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = '#DCE4DE';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.restore();
-    };
-
-    if (type === 'single') {
-      drawGrain(300, 300, 70, 24, Math.PI / 6, '#FFFFFF');
-    } else if (type === 'multi') {
-      drawGrain(160, 180, 55, 18, 0.3, '#F7F5EF');
-      drawGrain(280, 160, 60, 20, -0.4, '#FFFFFF');
-      drawGrain(420, 200, 50, 17, 0.8, '#FEF3E2');
-      drawGrain(190, 320, 58, 19, -0.2, '#F5E1E0');
-      drawGrain(340, 310, 40, 18, 0.5, '#F7F5EF');
-      drawGrain(450, 340, 62, 21, -0.7, '#E8EDE9');
-      drawGrain(220, 440, 54, 18, 0.1, '#FFFFFF');
-      drawGrain(370, 450, 56, 19, -0.5, '#FFFFFF');
-    } else {
-      drawGrain(200, 250, 60, 20, 0.2, '#FFFFFF');
-      drawGrain(360, 280, 58, 19, -0.4, '#FFFFFF');
-      ctx.fillStyle = '#8A948E';
-      ctx.beginPath();
-      ctx.moveTo(300, 400);
-      ctx.lineTo(350, 380);
-      ctx.lineTo(380, 430);
-      ctx.lineTo(310, 440);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `demo_${type}_rice.jpg`, { type: 'image/jpeg' });
-        setSelectedFile(file);
-        setPreviewUrl(canvas.toDataURL('image/jpeg'));
-      }
-    }, 'image/jpeg');
-  };
-
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Intro Header */}
@@ -120,34 +63,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
         <h1 className="text-3xl font-extrabold text-text-primary tracking-tight sm:text-4xl">
           Automated Rice Grain Quality Analysis
         </h1>
-        {/* Quick Demo Previews */}
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span className="text-text-secondary flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-brand" />
-            Quick Demo Samples:
-          </span>
-          <button
-            type="button"
-            onClick={() => createDemoSample('single')}
-            className="px-2.5 py-1 bg-surface-subtle hover:bg-brand-light text-text-primary rounded-md border border-border transition"
-          >
-            1 Grain (Single Grain Mode)
-          </button>
-          <button
-            type="button"
-            onClick={() => createDemoSample('multi')}
-            className="px-2.5 py-1 bg-surface-subtle hover:bg-brand-light text-text-primary rounded-md border border-border transition"
-          >
-            8 Grains (Multi-Defect Sample)
-          </button>
-          <button
-            type="button"
-            onClick={() => createDemoSample('foreign')}
-            className="px-2.5 py-1 bg-surface-subtle hover:bg-brand-light text-text-primary rounded-md border border-border transition"
-          >
-            Rice + Foreign Matter
-          </button>
-        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">

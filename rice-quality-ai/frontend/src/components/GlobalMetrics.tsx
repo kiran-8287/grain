@@ -1,53 +1,18 @@
 import React from 'react';
-import { SampleSummary, ImageQuality } from '../types';
-import { Layers, AlertTriangle, ShieldCheck, Activity, Award } from 'lucide-react';
+import { SampleSummary } from '../types';
+import { Layers, ShieldCheck, Activity, Award } from 'lucide-react';
 
 interface GlobalMetricsProps {
   summary: SampleSummary;
-  quality?: ImageQuality;
   warnings: string[];
 }
 
-export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, warnings }) => {
+export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings }) => {
   const formatPercent = (value: number | null | undefined) =>
     value == null ? 'N/A' : `${value}%`;
 
-  const getQualityBadge = (tier?: string) => {
-    switch (tier) {
-      case 'GOOD':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-success-bg text-success border border-success/20">GOOD</span>;
-      case 'FAIR':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-info-bg text-info border border-info/20">FAIR</span>;
-      case 'POOR':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-warning-bg text-warning border border-warning/20">POOR</span>;
-      default:
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-error-bg text-error border border-error/20">UNRELIABLE</span>;
-    }
-  };
-
   return (
     <div className="space-y-4">
-      {/* Small Sample Warning Banner */}
-      {summary.is_small_sample && (
-        <div className="bg-warning-bg border border-warning/30 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-          <div className="text-xs text-warning">
-            <span className="font-semibold block text-warning">Statistical Small-Sample Notice:</span>
-            {summary.total_rice_grains === 1 ? (
-              <p className="mt-0.5">
-                Sample size is 1 grain. Individual-grain analysis is available, but sample-level quality percentages
-                are not representative of a larger rice lot.
-              </p>
-            ) : (
-              <p className="mt-0.5">
-                Observed sample size ({summary.total_rice_grains} grains) is below the project screening threshold (30 grains; engineering threshold, not an official requirement).
-                Individual classifications are provided, but sample percentages reflect observed sample fraction, not whole batch quality.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Main 14 Project Parameters Summary Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* Total Count */}
@@ -195,12 +160,6 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, quality, 
           <span className="text-[10px] text-text-muted mt-1 block">Median: {summary.median_lb_ratio}</span>
         </div>
 
-        {/* Image Quality Tier */}
-        <div className="bg-surface border border-border rounded-xl p-3.5 shadow-sm flex flex-col justify-between">
-          <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider block">Image Quality Tier</span>
-          <div className="my-1">{getQualityBadge(quality?.tier)}</div>
-          <span className="text-[10px] text-text-muted block">Blur score: {Math.round(quality?.blur_score || 0)}</span>
-        </div>
       </div>
     </div>
   );

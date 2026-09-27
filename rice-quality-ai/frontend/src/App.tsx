@@ -207,30 +207,16 @@ export const App: React.FC = () => {
             {/* 1. Global Metrics & 14 Project Parameters */}
             <GlobalMetrics
               summary={result.summary}
-              quality={result.quality}
               warnings={result.warnings}
             />
 
-            {/* 2. Visual Inspection & Grain Detail Split */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left: Annotated Image Viewer (7 cols) */}
-              <div className="lg:col-span-7">
-                <AnnotatedViewer
-                  annotatedImageUrl={result.annotated_image_base64}
-                  grains={result.grains}
-                  selectedGrainId={selectedGrainId}
-                  onSelectGrain={(id) => setSelectedGrainId(id)}
-                />
-              </div>
-
-              {/* Right: Selected Grain Detail Inspector (5 cols) */}
-              <div className="lg:col-span-5">
-                <GrainDetailPanel
-                  grain={selectedGrain}
-                  unit={result.summary.measurement_unit}
-                />
-              </div>
-            </div>
+            {/* 2. Full-width annotated image */}
+            <AnnotatedViewer
+              annotatedImageUrl={result.annotated_image_base64}
+              grains={result.grains}
+              selectedGrainId={selectedGrainId}
+              onSelectGrain={(id) => setSelectedGrainId(id)}
+            />
 
             {/* 3. Grain Population Table */}
             {result.grains && result.grains.length > 0 && (
@@ -242,10 +228,16 @@ export const App: React.FC = () => {
               />
             )}
 
-            {/* 4. Historical/reference image screening */}
+            {/* 4. Selected grain parameter summary */}
+            <GrainDetailPanel
+              grain={selectedGrain}
+              unit={result.summary.measurement_unit}
+            />
+
+            {/* 5. Historical/reference image screening */}
             <StandardsScreening standards={result.standards} />
 
-            {/* 5. Provenance & Diagnostics */}
+            {/* 6. Provenance & Diagnostics */}
             <QualityWarningsPanel
               quality={result.quality}
               warnings={result.warnings}
@@ -254,16 +246,11 @@ export const App: React.FC = () => {
               megapixels={result.image.megapixels}
             />
 
-            {/* 6. Export Controls */}
+            {/* 7. Export Controls */}
             <ExportControls jobId={result.job_id} onReset={handleReset} />
           </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-surface-page py-4 text-center text-xs text-text-muted">
-        Grain Quality Analyzer &bull; Image-based screening &bull; Historical/reference standards &bull; Experimental models identified
-      </footer>
     </div>
   );
 };

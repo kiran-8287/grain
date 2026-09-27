@@ -298,3 +298,39 @@ This log entry was intentionally recorded in both the repo log and the root-leve
 - Download the wheat dataset archive from its public version page into `data/raw/roboflow_wheat_grain_gate_negatives_v1/`.
 - Audit actual image labels, capture groups, and class counts locally; do not assume the public split is source-group-safe.
 - Obtain source-group-safe rice-positive images and implement the real-image gate trainer/evaluator before preparing the approved manifest.
+
+## 2026-09-27 — Removed quick demo feature from frontend
+
+### Summary
+
+- Removed the "Quick Demo Samples" UI block and its synthetic canvas-drawing logic from `UploadSection.tsx`.
+- Removed the unused `Sparkles` icon import from `lucide-react`.
+
+### Files changed
+
+- [rice-quality-ai/frontend/src/components/UploadSection.tsx](../frontend/src/components/UploadSection.tsx)
+
+### Verification
+
+- Frontend TypeScript typecheck (`tsc --noEmit`) passed with no errors.
+
+## 2026-09-27 — Compact diagnostics and remove small-sample notice
+
+### Summary
+
+- Added a top-right Details toggle to the Provenance & Quality panel. Pipeline warnings, image-quality rationale and thresholds, and the parameter provenance table remain available when expanded and are hidden by default.
+- Removed the Statistical Small-Sample Notice from the metrics UI; grain metrics and per-grain analysis are unchanged.
+
+### Files changed
+
+- [frontend/src/components/QualityWarningsPanel.tsx](../frontend/src/components/QualityWarningsPanel.tsx)
+- [frontend/src/components/GlobalMetrics.tsx](../frontend/src/components/GlobalMetrics.tsx)
+- [progress/WORK_LOG.md](WORK_LOG.md)
+
+### Verification
+
+- `cd rice-quality-ai/frontend; npm run build` -> TypeScript check and Vite production build passed.
+
+### Blockers and next steps
+
+- None for this UI change.
