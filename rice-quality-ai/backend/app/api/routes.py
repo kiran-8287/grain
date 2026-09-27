@@ -260,151 +260,27 @@ def _build_phase1_overlay(
     analysis: Dict[str, Any],
 ) -> np.ndarray:
     """
-    Build an overlay image on top of the original RGB image showing:
-      - Coloured semi-transparent grain masks
-      - Grain ID text above each grain
-      - Red bounding boxes around foreign matter with label "FM #id"
+    Thin wrapper: delegated to the shared renderer in ``ml.postprocessing`` so
+    the Phase 1 demo endpoint and the full dashboard annotated image produce
+    pixel-identical mask colours, ID labels, FM boxes, and legend.
+
+    Kept here (and not deleted) to avoid breaking existing callers that import
+    it privately from this module; its body is now one line plus method-badge
+    label assembly.
     """
-    overlay = img_rgb.copy()
-    h, w = overlay.shape[:2]
+    from ml.postprocessing import render_phase1_overlay
 
-    # 1) Rice grain masks — use distinct colours per grain (cycle palette)
-    palette: List[Tuple[int, int, int]] = [
-        (100, 220, 120),
-        (120, 180, 255),
-        (255, 200, 100),
-        (200, 130, 255),
-        (100, 220, 220),
-        (255, 160, 180),
-        (220, 220, 100),
-        (170, 220, 255),
-    ]
+    method = analysis.get("method") or "seg"
+    version = analysis.get("model_version") or ""
+    legend_label = f"{method}  v{version}" if version else method
+    return render_phase1_overlay(
+        img_rgb=img_rgb,
+        grains=analysis.get("grains", []) or [],
+        foreign_matter=analysis.get("foreign_matter", []) or [],
+        include_legend=True,
+        legend_method_label=legend_label,
+    )
 
-    grains: List[Dict[str, Any]] = analysis.get("grains", []) or []
-    for idx, g in enumerate(grains):
-        bbox = g.get("bbox", [0, 0, 0, 0])
-        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-            continue
-        bx, by, bw, bh = [int(v) for v in bbox]
-        gid = int(g.get("id", idx + 1))
-        color = palette[idx % len(palette)]
-
-        polygon = g.get("mask_polygon") or []
-        mask_filled = None
-        if isinstance(polygon, list) and len(polygon) >= 3:
-            try:
-                pts = np.array(
-                    [[int(float(px)), int(float(py))] for [px, py] in polygon],
-                    dtype=np.int32,
-                ).reshape(-1, 1, 2)
-                mask_canvas = np.zeros((h, w), dtype=np.uint8)
-                cv2.fillPoly(mask_canvas, [pts], 255)
-                mask_filled = mask_canvas
-            except Exception:
-                mask_filled = None
-
-        if mask_filled is None and bw > 0 and bh > 0:
-            # Fallback: fill bbox as mask
-            mask_filled = np.zeros((h, w), dtype=np.uint8)
-            x1 = max(0, bx)
-            y1 = max(0, by)
-            x2 = min(w, bx + bw)
-            y2 = min(h, by + bh)
-            mask_filled[y1:y2, x1:x2] = 255
-
-        if mask_filled is not None:
-            sel = mask_filled > 0
-            # Blend colour over overlay
-            alpha = 0.38
-            overlay[sel] = (
-                (1.0 - alpha) * overlay[sel].astype(np.float32)
-                + alpha * np.array(color, dtype=np.float32)
-            ).astype(np.uint8)
-
-            # Contour outline
-            try:
-                cnts, _ = cv2.findContours(mask_filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if cnts:
-                    cv2.drawContours(overlay, cnts, -1, color, 2)
-            except Exception:
-                pass
-
-        # Grain ID label
-        label = f"#{gid}"
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.5
-        thickness = 1
-        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
-        lx = max(0, bx)
-        ly = max(th + baseline + 2, by - 4)
-        if ly + th + 2 > h:
-            ly = min(h - 2, by + bh // 2)
-        cv2.rectangle(
-            overlay,
-            (lx, ly - th - baseline),
-            (lx + tw + 4, ly + 2),
-            (30, 30, 30),
-            -1,
-        )
-        cv2.putText(
-            overlay,
-            label,
-            (lx + 2, ly),
-            font,
-            font_scale,
-            (255, 255, 255),
-            thickness,
-            cv2.LINE_AA,
-        )
-
-    # 2) Foreign matter — red boxes + label
-    fm: List[Dict[str, Any]] = analysis.get("foreign_matter", []) or []
-    red = (255, 60, 60)
-    for f in fm:
-        bbox = f.get("bbox", [0, 0, 0, 0])
-        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-            continue
-        bx, by, bw, bh = [int(v) for v in bbox]
-        if bw <= 0 or bh <= 0:
-            continue
-        x1 = max(0, bx)
-        y1 = max(0, by)
-        x2 = min(w, bx + bw)
-        y2 = min(h, by + bh)
-        cv2.rectangle(overlay, (x1, y1), (x2, y2), red, 2)
-
-        fid = int(f.get("id", 0))
-        cls = f.get("class", "FM") or "FM"
-        label = f"FM#{fid} {cls}"
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.45
-        thickness = 1
-        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
-        ly = max(th + baseline + 2, y1 - 4)
-        lx = max(0, x1)
-        if ly + th + 2 > h:
-            ly = y2 - 2
-            if ly - th - baseline < 0:
-                ly = y2
-        cv2.rectangle(
-            overlay,
-            (lx, ly - th - baseline),
-            (lx + tw + 4, ly + 2),
-            red,
-            -1,
-        )
-        cv2.putText(
-            overlay,
-            label,
-            (lx + 2, ly),
-            font,
-            font_scale,
-            (255, 255, 255),
-            thickness,
-            cv2.LINE_AA,
-        )
-
-    return overlay
 
 
 @router.post("/phase1/analyze")

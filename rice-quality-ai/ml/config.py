@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_CACHE: Dict[str, Any] = {}
 
+CONFIDENCE_HIGH_THRESHOLD: float = 0.80
+CONFIDENCE_MEDIUM_THRESHOLD: float = 0.50
+CONFIDENCE_THRESHOLDS: Dict[str, float] = {
+    "high": CONFIDENCE_HIGH_THRESHOLD,
+    "medium": CONFIDENCE_MEDIUM_THRESHOLD,
+}
+
 def _get_project_root() -> Path:
     """Get the project root directory."""
     return Path(__file__).resolve().parent.parent

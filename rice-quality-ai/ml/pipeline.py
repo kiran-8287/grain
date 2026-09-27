@@ -4,7 +4,10 @@ Rice Quality Analysis Pipeline.
 Orchestrates the complete image-based quality analysis:
 1. Validates and loads image
 2. Detects rice presence (stops if no rice)
-3. Segments individual grains (Mask R-CNN or Classical CV fallback)
+3. Segments individual grains — **Phase 1 cascade priority**:
+   * YOLOv8l-seg trained weights (primary — green/yellow/orange HIGH/MEDIUM/LOW polygons)
+   * Mask R-CNN baseline (comparison fallback)
+   * Classical CV watershed (emergency fallback — never deleted per docs/MODEL.md cascade)
 4. Detects calibration reference (ArUco or manual, else uncalibrated)
 5. Computes per-grain geometry (Length, Breadth, L/B ratio, Area, Solidity, etc.)
 6. Classifies 8 defect types per grain (multi-label)
@@ -13,7 +16,8 @@ Orchestrates the complete image-based quality analysis:
 9. Computes sample-level summary statistics
 10. Evaluates image quality indicators & assigns tier
 11. Compares observed image fractions with historical/reference rice limits
-12. Generates annotated image with colored masks, Grain IDs, and foreign matter boxes
+12. Generates annotated image with **Phase 1 confidence-coloured polygons**,
+    Grain IDs, foreign-matter red FM#N boxes, and top-right legend badge.
 """
 
 import base64
@@ -42,12 +46,23 @@ from ml.colour import (
     compute_reference_lab,
     extract_grain_lab_pixels,
 )
-from ml.config import get_threshold, load_standards
+from ml.config import (
+    CONFIDENCE_HIGH_THRESHOLD,
+    CONFIDENCE_MEDIUM_THRESHOLD,
+    get_threshold,
+    load_standards,
+)
 from ml.foreign_matter import detect_foreign_matter, merge_gate_foreign_objects
 from ml.geometry import (
     classify_broken,
     compute_grain_geometry,
     compute_robust_whole_kernel_length,
+)
+from ml.inference import analyze_image as phase1_analyze_image
+from ml.postprocessing import (
+    PostProcessor,
+    confidence_to_color,
+    render_phase1_overlay,
 )
 from ml.preprocessing import (
     ImageValidationError,
@@ -73,6 +88,7 @@ from ml.texture import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 
 class RiceQualityPipeline:
@@ -114,6 +130,169 @@ class RiceQualityPipeline:
             if any(_overlaps(grain_box, box) for box in rice_boxes):
                 filtered.append(grain)
         return filtered
+
+    # ------------------------------------------------------------------
+    # Phase 1 → dashboard adapter.
+    #
+    # ml.inference.analyze_image() returns Phase1AnalysisResponse-style
+    # dicts with polygon masks and HIGH/MEDIUM/LOW labels.  The rest of
+    # this pipeline (geometry computation, 8 defect classifiers, summary
+    # stats) eats GrainInstance dataclasses with uint8 .mask arrays plus
+    # .contour, .bbox, .centroid.  This helper bridges the worlds so
+    # downstream code runs on the new masking unchanged.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _quality_from_label(label: Optional[str]) -> str:
+        return {
+            "HIGH": "excellent",
+            "MEDIUM": "good",
+            "LOW": "poor",
+        }.get(label or "", "segmented")
+
+    @staticmethod
+    def _rasterize_polygon(
+        h: int,
+        w: int,
+        polygon: Any,
+        bbox: Tuple[int, int, int, int],
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Return (uint8_mask_HxW, contour_Nx1x2_int32) from either a polygon
+        list of [x,y] points OR a fallback bbox rectangle.
+        """
+        bx, by, bw, bh = bbox
+        mask_filled = None
+        if isinstance(polygon, (list, tuple)) and len(polygon) >= 3:
+            try:
+                pts = np.array(
+                    [[int(float(px)), int(float(py))] for [px, py] in polygon],
+                    dtype=np.int32,
+                ).reshape(-1, 1, 2)
+                canvas = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillPoly(canvas, [pts], 255)
+                mask_filled = canvas
+            except Exception:
+                mask_filled = None
+
+        if mask_filled is None and bw > 0 and bh > 0:
+            mask_filled = np.zeros((h, w), dtype=np.uint8)
+            x1 = max(0, bx)
+            y1 = max(0, by)
+            x2 = min(w, bx + bw)
+            y2 = min(h, by + bh)
+            mask_filled[y1:y2, x1:x2] = 255
+
+        contour = None
+        if mask_filled is not None:
+            try:
+                cnts, _ = cv2.findContours(
+                    mask_filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                if cnts:
+                    # Largest contour only (polygon fill should give exactly one).
+                    contour = max(cnts, key=cv2.contourArea)
+            except Exception:
+                contour = None
+
+        return mask_filled, contour
+
+    def _phase1_to_dashboard_grains(
+        self,
+        image_rgb: np.ndarray,
+        phase1_result: Dict[str, Any],
+    ) -> Tuple[List[GrainInstance], List[Dict[str, Any]]]:
+        """
+        Convert the structured dict from ``ml.inference.analyze_image`` into
+        (1) a list of ``GrainInstance`` dataclasses for the downstream
+        geometry + defect classifier pipeline, and (2) a list of FM dicts
+        tagged with ``provenance='phase1'`` so the FM merge step later can
+        de-duplicate them against the gate's own FM detections.
+
+        The returned grain list is sorted by ``grain.id`` to keep the
+        dashboard viewer drop-down order identical to the rendered
+        annotated image IDs.
+        """
+        h, w = image_rgb.shape[:2]
+        method_used = phase1_result.get("method") or "classical_cv_fallback"
+
+        raw_grains: List[Dict[str, Any]] = list(
+            phase1_result.get("grains") or []
+        )
+        # Sort by ID for rendering consistency.
+        def _gid(g: Dict[str, Any]) -> int:
+            try:
+                return int(g.get("id", 0))
+            except Exception:
+                return 0
+
+        raw_grains.sort(key=_gid)
+
+        dashboard_grains: List[GrainInstance] = []
+        for g in raw_grains:
+            bbox = g.get("bbox", [0, 0, 0, 0])
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            bx, by, bw, bh = [int(v) for v in bbox]
+            gid = int(g.get("id", len(dashboard_grains) + 1))
+            confidence = float(g.get("confidence") or 0.0)
+            label = g.get("confidence_label")
+            if label is None:
+                label = PostProcessor.compute_confidence_label(confidence)
+            centroid = g.get("centroid")
+            if isinstance(centroid, (list, tuple)) and len(centroid) == 2:
+                cx, cy = float(centroid[0]), float(centroid[1])
+            else:
+                cx = float(bx + bw / 2.0)
+                cy = float(by + bh / 2.0)
+
+            mask, contour = self._rasterize_polygon(
+                h=h,
+                w=w,
+                polygon=g.get("mask_polygon"),
+                bbox=(bx, by, bw, bh),
+            )
+            if mask is None:
+                continue
+            area = int(np.sum(mask > 0))
+            if area <= 0 and bw * bh > 0:
+                area = bw * bh
+
+            instance = GrainInstance(
+                grain_id=gid,
+                mask=mask,
+                bbox=(bx, by, bw, bh),
+                confidence=confidence,
+                centroid=(cx, cy),
+                contour=contour,
+                is_touching=bool(g.get("is_touching", False)),
+                is_overlapping=False,
+                segmentation_quality=self._quality_from_label(label),
+                method=method_used,
+                is_foreign_matter=False,
+                confidence_label=label,
+                segmentation_method=method_used,
+                mask_polygon=g.get("mask_polygon"),
+            )
+            dashboard_grains.append(instance)
+
+        # --- Foreign matter list with provenance tag -------------------
+        fm_out: List[Dict[str, Any]] = []
+        for f in list(phase1_result.get("foreign_matter") or []):
+            bbox = f.get("bbox", [0, 0, 0, 0])
+            if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                continue
+            fm_out.append(
+                {
+                    "id": int(f.get("id", len(fm_out) + 1)),
+                    "class_name": f.get("class") or "foreign_matter",
+                    "bbox": tuple(int(v) for v in bbox),
+                    "confidence": float(f.get("confidence") or 0.0),
+                    "provenance": "phase1_segmentation",
+                }
+            )
+        return dashboard_grains, fm_out
+
 
     def analyze(
         self,
@@ -195,16 +374,90 @@ class RiceQualityPipeline:
         calibration_res = detect_calibration(image_rgb, manual_scale=manual_scale)
         pixels_per_mm = calibration_res.pixels_per_mm
 
-        # 4. Grain Instance Segmentation
-        # For huge images, we do segmentation with memory-safe sizing if needed.
+        # 4. Grain Instance Segmentation — Phase 1 masking cascade
+        #
+        #    Priority (identical to docs/MODEL.md and ml.inference.analyze_image):
+        #      1. YOLOv8l-seg trained weights -> mask polygons + confidence labels
+        #      2. Mask R-CNN baseline         -> fallback (slower)
+        #      3. Classical CV watershed      -> emergency fallback, never deleted
+        #
+        #    After Phase 1 returns polygons, we rasterize them to uint8 masks
+        #    (see _phase1_to_dashboard_grains) so that Steps 5–11 (geometry, 8
+        #    defect classifiers, foreign matter, summary stats, standards)
+        #    continue to run completely unchanged on identical-shaped inputs.
+        phase1_meta: Dict[str, Any] = {}
+        phase1_fm_extra: List[Dict[str, Any]] = []
+        seg_detected = 0
+        seg_uncertain = 0
+        seg_rejected = 0
+
+        try:
+            phase1_result = phase1_analyze_image(
+                rgb_np=image_rgb,
+                return_overlay=False,
+                include_confidence_label=True,
+            )
+            if not isinstance(phase1_result, dict):
+                raise RuntimeError(
+                    f"phase1_analyze_image returned non-dict: {type(phase1_result)}"
+                )
+            phase1_method = phase1_result.get("method") or "unknown"
+            phase1_version = phase1_result.get("model_version") or ""
+            processing = phase1_result.get("processing") or {}
+            phase1_meta = {
+                "segmentation_method_used": phase1_method,
+                "model_version": phase1_version,
+                "processing_inference_ms": int(processing.get("inference_ms") or 0),
+                "processing_total_ms": int(processing.get("total_ms") or 0),
+                "tiling_used": bool(processing.get("tiling_used", False)),
+                "num_tiles": int(processing.get("num_tiles") or 0),
+                "source": "phase1_cascade",
+            }
+            grains, phase1_fm_extra = self._phase1_to_dashboard_grains(
+                image_rgb=image_rgb,
+                phase1_result=phase1_result,
+            )
+            seg_detected = len(grains)
+            seg_uncertain = sum(
+                1
+                for g in grains
+                if (g.confidence_label or "").upper() in {"LOW", "MEDIUM"}
+            )
+            seg_rejected = 0
+            warnings.append(
+                f"Segmentation cascade used: {phase1_method} "
+                f"(v{phase1_version or '?'}). "
+                f"Rasterized {seg_detected} polygons → uint8 masks "
+                f"for downstream geometry + defect pipeline."
+            )
+        except Exception as exc:
+            # Cascade safety: if anything above failed, fall back to the
+            # classical CV watershed segment_grains() we used before.  This
+            # emergency fallback is NEVER deleted per docs/MODEL.md cascade.
+            logger.warning(
+                "Phase 1 segmentation cascade failed. "
+                "Falling back to classical CV watershed. Error: %s",
+                exc,
+            )
+            warnings.append(
+                "Phase 1 masking cascade unavailable — "
+                "falling back to classical CV watershed. "
+                f"Reason: {exc!r}"
+            )
+            phase1_meta = {"source": "classical_cv_fallback", "fallback_reason": repr(exc)}
+            seg_result = segment_grains(image_rgb, method="auto")
+            warnings.extend(seg_result.warnings)
+            grains = list(seg_result.grains)
+            seg_detected = seg_result.detected_count
+            seg_uncertain = seg_result.uncertain_count
+            seg_rejected = seg_result.rejected_count
+
         # IMPORTANT: only rice-gate detections are allowed to survive into the
         # per-grain rice analysis. Non-rice detections remain in the foreign-matter
         # channel and must never become GrainInstance objects.
-        seg_result = segment_grains(image_rgb, method="auto")
-        warnings.extend(seg_result.warnings)
-
-        grains = self._filter_grains_to_rice(seg_result.grains, rice_gate)
-        if len(grains) != len(seg_result.grains):
+        pre_filter_count = len(grains)
+        grains = self._filter_grains_to_rice(grains, rice_gate)
+        if len(grains) != pre_filter_count:
             warnings.append(
                 "Filtered non-rice segmented objects before per-grain rice analysis. "
                 "Only rice-gate detections remain in the rice-grain pipeline."
@@ -230,10 +483,11 @@ class RiceQualityPipeline:
                 start_time=start_time,
                 message=MESSAGE_NO_ANALYSABLE_RICE,
                 sample_overrides={
-                    "total_detected": seg_result.detected_count,
-                    "uncertain": seg_result.uncertain_count,
-                    "rejected": seg_result.rejected_count,
+                    "total_detected": seg_detected,
+                    "uncertain": seg_uncertain,
+                    "rejected": seg_rejected,
                 },
+                phase1_meta=phase1_meta,
             )
 
         # 5. Per-grain Geometry
@@ -430,11 +684,40 @@ class RiceQualityPipeline:
         # 8. Foreign Matter Detection (Full Image)
         #    The gate's non-rice detections are merged in so foreign matter is always
         #    reported separately from rice (CASE B: rice + foreign matter).
+        #    Additionally, if Phase 1 cascade produced its own FM detections, we
+        #    include them as extra inputs (tagged provenance='phase1_segmentation')
+        #    and the merger de-duplicates by box-IoU against the gate FM list.
         grain_masks_list = [g.mask for g in grains]
-        fm_result = merge_gate_foreign_objects(
-            detect_foreign_matter(image_rgb, grain_masks=grain_masks_list),
-            rice_gate,
-        )
+        base_fm = detect_foreign_matter(image_rgb, grain_masks=grain_masks_list)
+        extra_fm_dicts: List[Dict[str, Any]] = []
+        for f in phase1_fm_extra:
+            # Convert adapter tuple/dict to a ForeignObject-shaped object the
+            # merge helper can consume.  We produce dicts with the same shape
+            # as detect_foreign_matter output (bbox + class_name + confidence).
+            extra_fm_dicts.append(
+                {
+                    "class_name": f.get("class_name") or "foreign_matter",
+                    "bbox": tuple(f["bbox"]) if isinstance(f.get("bbox"), (list, tuple)) else (0, 0, 0, 0),
+                    "confidence": float(f.get("confidence") or 0.0),
+                    "provenance": f.get("provenance") or "phase1_segmentation",
+                }
+            )
+        # Append extras to the FM pipeline's list before merge-gate step.
+        merged_fm_list: List[Any] = list(getattr(base_fm, "objects", []) or [])
+        if extra_fm_dicts:
+            # Build a lightweight object matching the ForeignObject protocol
+            # that merge_gate_foreign_objects expects (attribute-based access).
+            class _AdHocFM:
+                def __init__(self, d: Dict[str, Any]):
+                    for k, v in d.items():
+                        setattr(self, k, v)
+            merged_fm_list.extend([_AdHocFM(d) for d in extra_fm_dicts])
+            # Monkey-patch the base FM result's objects before merging.
+            try:
+                base_fm.objects = merged_fm_list
+            except Exception:
+                pass
+        fm_result = merge_gate_foreign_objects(base_fm, rice_gate)
         warnings.extend(fm_result.warnings)
 
         # 9. Admixture Detection (Sample-Level)
@@ -599,29 +882,89 @@ class RiceQualityPipeline:
         )
         warnings.extend(standards_res.get("warnings", []))
 
-        # 13. Generate Annotated Image
-        annotated_b64 = self._create_annotated_image_b64(
-            image_rgb=image_rgb,
-            grains=grains,
-            geometries=geometries,
-            foreign_objects=fm_result.objects,
+        # 13. Generate Annotated Image — uses shared Phase 1 renderer so that the
+        #     Full Analysis Dashboard and the Phase 1 demo endpoint produce
+        #     pixel-identical HIGH/MEDIUM/LOW colored polygons, ID pills,
+        #     foreign-matter FM#N red boxes, and a top-right legend badge.
+        #
+        #     Synthesis path: every GrainInstance (populated with
+        #     confidence_label + mask_polygon if Phase 1 cascade ran) is mapped
+        #     back to the Phase1AnalysisResponse dict shape render_phase1_overlay
+        #     expects.  Any grain with no mask_polygon (classical CV fallback)
+        #     falls back to bbox-fill inside the renderer.
+        phase1_grains_for_render: List[Dict[str, Any]] = []
+        for g in grains:
+            mask_polygon = None
+            if isinstance(g.mask_polygon, (list, tuple)) and len(g.mask_polygon) >= 3:
+                mask_polygon = [[float(x), float(y)] for [x, y] in g.mask_polygon]
+            phase1_grains_for_render.append(
+                {
+                    "id": int(g.grain_id),
+                    "bbox": [int(g.bbox[0]), int(g.bbox[1]), int(g.bbox[2]), int(g.bbox[3])],
+                    "confidence": float(g.confidence),
+                    "confidence_label": g.confidence_label,
+                    "mask_polygon": mask_polygon,
+                    "centroid": [float(g.centroid[0]), float(g.centroid[1])],
+                }
+            )
+        fm_for_render: List[Dict[str, Any]] = []
+        for idx, fo in enumerate(list(fm_result.objects or [])):
+            try:
+                bbox_attr = getattr(fo, "bbox", None)
+                if bbox_attr is None and isinstance(fo, dict):
+                    bbox_attr = fo.get("bbox")
+                if not isinstance(bbox_attr, (list, tuple)) or len(bbox_attr) != 4:
+                    continue
+                class_name = getattr(fo, "class_name", None) or (
+                    fo.get("class_name") if isinstance(fo, dict) else "FM"
+                ) or "FM"
+                conf = float(getattr(fo, "confidence", 0.0) or 0.0)
+                fm_for_render.append(
+                    {
+                        "id": int(idx + 1),
+                        "class": str(class_name),
+                        "confidence": conf,
+                        "bbox": [int(v) for v in bbox_attr],
+                    }
+                )
+            except Exception:
+                continue
+        legend_label = None
+        if phase1_meta:
+            m = phase1_meta.get("segmentation_method_used") or phase1_meta.get("source")
+            v = phase1_meta.get("model_version") or ""
+            if m:
+                legend_label = f"{m}  v{v}" if v else str(m)
+        overlay_rgb = render_phase1_overlay(
+            img_rgb=image_rgb,
+            grains=phase1_grains_for_render,
+            foreign_matter=fm_for_render,
+            include_legend=True,
+            legend_method_label=legend_label,
         )
+        annotated_b64 = self._encode_rgb_to_jpeg_b64(image_rgb=overlay_rgb)
 
         total_elapsed = time.time() - start_time
 
         # Build clean deduplicated warnings list
         unique_warnings = list(dict.fromkeys(warnings))
 
-        return {
+        # Touching/merged estimate: grain count minus unique grain centroids
+        # within 1 px is a rough approximation; classical CV watershed had an
+        # explicit estimator. Phase 1 cascade marks per-grain `is_touching`
+        # directly so we can report that instead.
+        estimated_merged = sum(1 for g in grains if g.is_touching)
+
+        result_dict = {
             "success": True,
             "rice_detected": True,
             "image": image_info.to_dict(),
             "sample": {
-                "total_detected": seg_result.detected_count,
+                "total_detected": seg_detected,
                 "analysed": n_grains,
-                "uncertain": seg_result.uncertain_count,
-                "rejected": seg_result.rejected_count,
-                "estimated_merged": seg_result.estimated_merged_count,
+                "uncertain": seg_uncertain,
+                "rejected": seg_rejected,
+                "estimated_merged": estimated_merged,
             },
             "calibration": calibration_res.to_dict(),
             "quality": quality_res,
@@ -636,6 +979,15 @@ class RiceQualityPipeline:
             "processing_time_seconds": round(total_elapsed, 3),
         }
 
+        # Optional, schema-permissive metadata block — preserved exactly as
+        # produced by the cascade so frontend/dashboard panels can surface a
+        # "Segmentation Method: YOLOv8l-seg" badge later.  No existing frontend
+        # key depends on this; it is silently ignored by older clients.
+        if phase1_meta:
+            result_dict["segmentation_info"] = dict(phase1_meta)
+
+        return result_dict
+
     def _build_no_rice_response(
         self,
         image_info: Any,
@@ -645,6 +997,7 @@ class RiceQualityPipeline:
         start_time: float,
         message: Optional[str] = None,
         sample_overrides: Optional[Dict[str, Any]] = None,
+        phase1_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         CASE 1 response: no valid rice-class detection, so the rice-analysis
@@ -725,6 +1078,23 @@ class RiceQualityPipeline:
             "processing_time_seconds": round(time.time() - start_time, 3),
         }
 
+    def _encode_rgb_to_jpeg_b64(self, image_rgb: np.ndarray) -> str:
+        """
+        Encode an HxWx3 uint8 RGB numpy array to a data URI string suitable for
+        ``<img src="...">`` embedding in the dashboard / demo frontend.
+
+        Used by both the Phase 1 renderer (primary) and the classical CV
+        fallback annotated renderer.
+        """
+        pil_img = Image.fromarray(image_rgb)
+        h, w = image_rgb.shape[:2]
+        if max(w, h) > 1600:
+            pil_img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        pil_img.save(buffer, format="JPEG", quality=85)
+        b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64_str}"
+
     def _create_annotated_image_b64(
         self,
         image_rgb: np.ndarray,
@@ -732,11 +1102,58 @@ class RiceQualityPipeline:
         geometries: List[Any],
         foreign_objects: List[Any],
     ) -> str:
-        """Draw masks, bounding boxes, Grain IDs and foreign matter boxes."""
+        """
+        Classical-CV fallback annotated renderer — called only from the
+        NOT_RICE fast path (where no segmented grains exist yet and we just
+        need FM-only boxes drawn) OR if the user disables Phase 1 renderer.
+
+        For the main (rice-detected) path, the dashboard now uses
+        ``render_phase1_overlay`` via the call site immediately above Step 13
+        in ``analyze()``.
+        """
+        # Fast path: empty grains list and we just need FM boxes — delegate to
+        # the shared renderer with empty grains list, which still draws
+        # FM boxes correctly (identical output to the old function for zero
+        # grains, no-op mask drawing).
+        if not grains:
+            fm_for_render: List[Dict[str, Any]] = []
+            for idx, fo in enumerate(list(foreign_objects or [])):
+                try:
+                    bbox_attr = getattr(fo, "bbox", None)
+                    if bbox_attr is None and isinstance(fo, dict):
+                        bbox_attr = fo.get("bbox")
+                    if not isinstance(bbox_attr, (list, tuple)) or len(bbox_attr) != 4:
+                        continue
+                    class_name = getattr(fo, "class_name", None) or (
+                        fo.get("class_name") if isinstance(fo, dict) else "FM"
+                    ) or "FM"
+                    conf = float(getattr(fo, "confidence", 0.0) or 0.0)
+                    fm_for_render.append(
+                        {
+                            "id": int(idx + 1),
+                            "class": str(class_name),
+                            "confidence": conf,
+                            "bbox": [int(v) for v in bbox_attr],
+                        }
+                    )
+                except Exception:
+                    continue
+            overlay = render_phase1_overlay(
+                img_rgb=image_rgb,
+                grains=[],
+                foreign_matter=fm_for_render,
+                include_legend=False,
+                legend_method_label=None,
+            )
+            return self._encode_rgb_to_jpeg_b64(overlay)
+
+        # Slow path: grains exist AND a caller explicitly used this function
+        # (should not happen in normal dashboard flow).  Keep the original
+        # cycle-palette renderer alive only so any third-party code that
+        # imports this method directly keeps working.
         overlay = image_rgb.copy()
         h, w = image_rgb.shape[:2]
 
-        # Colors
         colors = [
             (34, 197, 94),   # Green
             (59, 130, 246),  # Blue

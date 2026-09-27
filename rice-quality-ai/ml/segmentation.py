@@ -36,6 +36,10 @@ class GrainInstance:
     segmentation_quality: str = "good"  # good, uncertain, poor
     method: str = "classical_cv_fallback"
     is_foreign_matter: bool = False
+    # Phase 1 segmentation extras (optional, populated when ml.inference cascade is used)
+    confidence_label: Optional[str] = None    # HIGH, MEDIUM, LOW, or None if not assigned
+    segmentation_method: Optional[str] = None  # yolov8l-seg, maskrcnn, classical_cv, etc.
+    mask_polygon: Optional[List[Tuple[float, float]]] = None  # original polygon from Phase1, if any
 
     def mask_area(self) -> int:
         return int(np.sum(self.mask > 0))

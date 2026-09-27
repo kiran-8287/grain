@@ -18,7 +18,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from ml.config import get_project_root, get_model_info, get_threshold
+from ml.config import (
+    CONFIDENCE_HIGH_THRESHOLD,
+    CONFIDENCE_MEDIUM_THRESHOLD,
+    CONFIDENCE_THRESHOLDS,
+    get_project_root,
+    get_model_info,
+    get_threshold,
+)
 from ml.postprocessing import PostProcessor
 from ml.segmentation import segment_grains, SegmentationResult, GrainInstance
 

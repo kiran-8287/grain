@@ -4,19 +4,340 @@ Post-processing for instance segmentation outputs.
 Handles confidence filtering, mask-level NMS, global ID assignment,
 geometry verification, touching detection, and tiling pipeline for
 large or dense images.
+
+Also exposes the shared `render_phase1_overlay()` used by both the
+Phase 1 demo endpoint and the full dashboard pipeline so that grain
+masks are always coloured consistently with HIGH/MEDIUM/LOW confidence
+labels.
 """
 
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from ml.config import get_project_root, get_threshold
+from ml.config import (
+    CONFIDENCE_HIGH_THRESHOLD,
+    CONFIDENCE_MEDIUM_THRESHOLD,
+    get_project_root,
+    get_threshold,
+)
 
 PROJECT_ROOT = get_project_root()
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Confidence palettes — shared between routes.py (Phase 1 demo endpoint),
+# RiceQualityPipeline (full dashboard annotated image), and frontend legends.
+# ============================================================================
+
+# Color scheme per confidence label (BGR convention? No -> always RGB here because
+# all internal buffers in the project are RGB numpy arrays; OpenCV BGR conversion
+# is done ONLY at the network I/O boundary in individual callers).
+CONFIDENCE_COLORS_RGB: Dict[str, Tuple[int, int, int]] = {
+    "HIGH":   (34, 197, 94),     # Bright green  -> clearly trustworthy
+    "MEDIUM": (234, 179, 8),     # Amber/yellow -> usable, analyst should verify
+    "LOW":    (249, 115, 22),    # Orange       -> poor, borderline invalid
+    "UNKNOWN": (148, 163, 184),  # Slate        -> no confidence_label available
+}
+
+# Cycle palette used when confidence labels are not available but a stable
+# per-grain distinguishable color is still desired (e.g. classical CV fallback
+# where no model confidence exists, or comparison renders).
+GRAIN_CYCLE_PALETTE_RGB: List[Tuple[int, int, int]] = [
+    (100, 220, 120),
+    (120, 180, 255),
+    (255, 200, 100),
+    (200, 130, 255),
+    (100, 220, 220),
+    (255, 160, 180),
+    (220, 220, 100),
+    (170, 220, 255),
+]
+
+# Foreign matter box + label color.
+FOREIGN_MATTER_COLOR_RGB: Tuple[int, int, int] = (255, 60, 60)
+
+
+def confidence_to_color(
+    confidence: Optional[float],
+    label: Optional[str] = None,
+) -> Tuple[int, int, int]:
+    """
+    Map a (confidence float, optional label) pair to an RGB color triple.
+
+    Priority: if ``label`` is provided (HIGH/MEDIUM/LOW/UNKNOWN) use that
+    directly.  Otherwise derive the label from ``confidence`` using the
+    shared thresholds exported from ``ml.inference``.
+    """
+    if label and label in CONFIDENCE_COLORS_RGB:
+        return CONFIDENCE_COLORS_RGB[label]
+    if confidence is None:
+        return CONFIDENCE_COLORS_RGB["UNKNOWN"]
+    if confidence >= CONFIDENCE_HIGH_THRESHOLD:
+        return CONFIDENCE_COLORS_RGB["HIGH"]
+    if confidence >= CONFIDENCE_MEDIUM_THRESHOLD:
+        return CONFIDENCE_COLORS_RGB["MEDIUM"]
+    return CONFIDENCE_COLORS_RGB["LOW"]
+
+
+def render_phase1_overlay(
+    img_rgb: np.ndarray,
+    grains: List[Dict[str, Any]],
+    foreign_matter: Optional[List[Dict[str, Any]]] = None,
+    *,
+    include_legend: bool = True,
+    legend_method_label: Optional[str] = None,
+    alpha: float = 0.38,
+) -> np.ndarray:
+    """
+    Build a confidence-coloured segmentation overlay on top of ``img_rgb``.
+
+    The exact same function is used by **both**:
+
+    * ``POST /api/phase1/analyze`` — demo endpoint rendering, and
+    * ``RiceQualityPipeline.analyze()`` — full dashboard annotated image.
+
+    This guarantees the analyst sees identical mask colours whether they
+    are inspecting the demo tab or the 14-parameter full-analysis dashboard.
+
+    Args:
+        img_rgb: HxWx3 uint8 RGB source image.
+        grains: List of grain dicts in the ``Phase1AnalysisResponse`` format.
+            Each grain must contain at least ``id``, ``bbox`` (x,y,w,h), and
+            either ``mask_polygon`` (array of [x,y] points) OR a valid bbox
+            which will be used as a fallback fill region.  Optional keys:
+            ``confidence``, ``confidence_label``, ``centroid``.
+        foreign_matter: Optional list of dicts, each with ``id``, ``bbox``,
+            and ``class``.  Rendered as red boxes with FM#id labels.
+        include_legend: When True, draw a top-right corner legend showing
+            the HIGH/MEDIUM/LOW palette plus the method badge.
+        legend_method_label: Short string, e.g. "YOLOv8l-seg / Run 1".  Only
+            shown if ``include_legend`` is True.
+        alpha: Blending weight for the semi-transparent mask fill.
+
+    Returns:
+        Modified HxWx3 uint8 RGB image.
+    """
+    overlay = img_rgb.copy()
+    h, w = overlay.shape[:2]
+
+    if not isinstance(grains, list):
+        grains = []
+    if not isinstance(foreign_matter, list):
+        foreign_matter = [] or []
+
+    # 1. Rice grain masks — colored by confidence_label (HIGH=green /
+    #    MEDIUM=amber / LOW=orange / fallback=cycle palette).
+    for idx, g in enumerate(grains):
+        bbox = g.get("bbox", [0, 0, 0, 0])
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        bx, by, bw, bh = [int(v) for v in bbox]
+        gid = int(g.get("id", idx + 1))
+
+        # Decide per-grain color
+        color = confidence_to_color(
+            confidence=g.get("confidence"),
+            label=g.get("confidence_label"),
+        )
+        # If color ended up UNKNOWN because neither label nor confidence was
+        # provided, fall back to the per-grain cycle palette so adjacent
+        # grains remain visually separable (useful for classical CV outputs).
+        if color == CONFIDENCE_COLORS_RGB["UNKNOWN"] and "confidence" not in g:
+            color = GRAIN_CYCLE_PALETTE_RGB[idx % len(GRAIN_CYCLE_PALETTE_RGB)]
+
+        polygon = g.get("mask_polygon") or []
+        mask_filled = None
+        if isinstance(polygon, list) and len(polygon) >= 3:
+            try:
+                pts = np.array(
+                    [[int(float(px)), int(float(py))] for [px, py] in polygon],
+                    dtype=np.int32,
+                ).reshape(-1, 1, 2)
+                mask_canvas = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillPoly(mask_canvas, [pts], 255)
+                mask_filled = mask_canvas
+            except Exception:
+                mask_filled = None
+
+        if mask_filled is None and bw > 0 and bh > 0:
+            # Fallback: fill bbox as mask
+            mask_filled = np.zeros((h, w), dtype=np.uint8)
+            x1 = max(0, bx)
+            y1 = max(0, by)
+            x2 = min(w, bx + bw)
+            y2 = min(h, by + bh)
+            mask_filled[y1:y2, x1:x2] = 255
+
+        if mask_filled is not None:
+            sel = mask_filled > 0
+            overlay[sel] = (
+                (1.0 - alpha) * overlay[sel].astype(np.float32)
+                + alpha * np.array(color, dtype=np.float32)
+            ).astype(np.uint8)
+
+            # Contour outline (darker/stronger version of fill color)
+            try:
+                cnts, _ = cv2.findContours(
+                    mask_filled, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+                )
+                if cnts:
+                    outline_color = tuple(
+                        min(255, int(c * 0.75)) for c in color
+                    )
+                    cv2.drawContours(overlay, cnts, -1, outline_color, 2)
+            except Exception:
+                pass
+
+        # Grain ID label — top-left of the bbox, on a dark pill so it stays
+        # readable even on dark rice samples.
+        label = f"#{gid}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        lx = max(0, bx)
+        ly = max(th + baseline + 2, by - 4)
+        if ly + th + 2 > h:
+            ly = min(h - 2, by + bh // 2)
+        cv2.rectangle(
+            overlay,
+            (lx, ly - th - baseline),
+            (lx + tw + 4, ly + 2),
+            (30, 30, 30),
+            -1,
+        )
+        cv2.putText(
+            overlay,
+            label,
+            (lx + 2, ly),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
+    # 2. Foreign matter — red boxes + label.
+    fm_color = FOREIGN_MATTER_COLOR_RGB
+    for f in foreign_matter:
+        bbox = f.get("bbox", [0, 0, 0, 0])
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            continue
+        bx, by, bw, bh = [int(v) for v in bbox]
+        if bw <= 0 or bh <= 0:
+            continue
+        x1 = max(0, bx)
+        y1 = max(0, by)
+        x2 = min(w, bx + bw)
+        y2 = min(h, by + bh)
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), fm_color, 2)
+
+        fid = int(f.get("id", 0))
+        cls = f.get("class", "FM") or "FM"
+        label = f"FM#{fid} {cls}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.45
+        thickness = 1
+        (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+        ly = max(th + baseline + 2, y1 - 4)
+        lx = max(0, x1)
+        if ly + th + 2 > h:
+            ly = y2 - 2
+            if ly - th - baseline < 0:
+                ly = y2
+        cv2.rectangle(
+            overlay,
+            (lx, ly - th - baseline),
+            (lx + tw + 4, ly + 2),
+            fm_color,
+            -1,
+        )
+        cv2.putText(
+            overlay,
+            label,
+            (lx + 2, ly),
+            font,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+
+    # 3. Legend — top-right corner.
+    if include_legend:
+        legend_entries = [
+            ("HIGH",   CONFIDENCE_COLORS_RGB["HIGH"],   f"≥ {CONFIDENCE_HIGH_THRESHOLD:.2f}"),
+            ("MEDIUM", CONFIDENCE_COLORS_RGB["MEDIUM"], f"≥ {CONFIDENCE_MEDIUM_THRESHOLD:.2f}"),
+            ("LOW",    CONFIDENCE_COLORS_RGB["LOW"],    "lower"),
+        ]
+        entry_h = 22
+        pad = 8
+        row_count = len(legend_entries) + (1 if legend_method_label else 0)
+        box_w = 170
+        box_h = pad * 2 + row_count * entry_h
+        bx0 = w - box_w - pad
+        by0 = pad
+        # Ensure legend fits inside the image (safety for tiny thumbnails).
+        if bx0 < 0 or by0 + box_h > h:
+            bx0 = max(pad, w - box_w - pad)
+            by0 = max(pad, h - box_h - pad)
+        cv2.rectangle(
+            overlay,
+            (bx0, by0),
+            (bx0 + box_w, by0 + box_h),
+            (0, 0, 0),
+            -1,
+        )
+        # Translucent dark background already applied via rect fill.
+        row = 0
+        if legend_method_label:
+            cv2.putText(
+                overlay,
+                legend_method_label,
+                (bx0 + pad, by0 + pad + 14 + row * entry_h),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (210, 220, 255),
+                1,
+                cv2.LINE_AA,
+            )
+            row += 1
+        for label, color, threshold_text in legend_entries:
+            cy = by0 + pad + 14 + row * entry_h
+            cx_swatch = bx0 + pad
+            sw = 14
+            cv2.rectangle(
+                overlay,
+                (cx_swatch, cy - 11),
+                (cx_swatch + sw, cy - 1),
+                color,
+                -1,
+            )
+            cv2.rectangle(
+                overlay,
+                (cx_swatch, cy - 11),
+                (cx_swatch + sw, cy - 1),
+                (80, 80, 80),
+                1,
+            )
+            cv2.putText(
+                overlay,
+                f"{label}  {threshold_text}",
+                (cx_swatch + sw + 6, cy),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (240, 240, 240),
+                1,
+                cv2.LINE_AA,
+            )
+            row += 1
+
+    return overlay
 
 
 class PostProcessor:
