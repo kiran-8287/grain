@@ -78,26 +78,26 @@ _LIMITATION = (
 _MODEL_STATUS = "fallback_active (Mask R-CNN rice_grain head not trained)"
 
 _DEFAULT_GATE_CONFIG: Dict[str, Any] = {
-    "rice_confidence_threshold": 0.65,
+    "rice_confidence_threshold": 0.52,
     "min_object_area_pixels": 50,
-    "min_rice_fraction_of_detections": 0.15,
+    "min_rice_fraction_of_detections": 0.05,
     "min_objects_for_fraction_rule": 25,
     "weights": {
-        "lightness": 0.35,
-        "chroma": 0.05,
-        "aspect_ratio": 0.5,
-        "surface_texture": 0.1,
+        "aspect_ratio": 0.35,
+        "surface_texture": 0.25,
+        "chroma": 0.20,
+        "lightness": 0.20,
     },
     "lightness": {
-        "full_credit_l_star": 78.0,
-        "zero_credit_l_star": 45.0,
+        "full_credit_l_star": 55.0,
+        "zero_credit_l_star": 30.0,
         "bright_background_l_star": 70.0,
         "full_credit_background_gap_fraction": 0.08,
         "zero_credit_background_gap_fraction": 0.30,
     },
-    "chroma": {"full_credit_c_star": 12.0, "zero_credit_c_star": 30.0},
-    "aspect_ratio": {"full_credit": 2.2, "zero_credit": 1.05},
-    "surface_texture": {"full_credit_roughness": 0.02, "zero_credit_roughness": 0.08},
+    "chroma": {"full_credit_c_star": 18.0, "zero_credit_c_star": 28.0},
+    "aspect_ratio": {"full_credit": 2.1, "zero_credit": 1.3},
+    "surface_texture": {"full_credit_roughness": 0.06, "zero_credit_roughness": 0.36},
 }
 
 _CLASS_MAPPING_CACHE: Optional[Dict[str, Any]] = None
@@ -330,16 +330,15 @@ def _object_features(
 
 def score_rice_confidence(
     features: Dict[str, Any], cfg: Dict[str, Any]
-) -> Tuple[float, Dict[str, float]]:
+) -> Tuple[float, Dict[str, Any]]:
     """
     Rice-class confidence in [0, 1] for one object, plus the per-cue breakdown.
 
     Cues (all configurable in configs/thresholds.json -> rice_gate):
-      * lightness       — rice is bright; a bright background adds a penalty when
-                          the object is far darker than that background
-      * chroma          — milled rice is achromatic (low C*)
-      * aspect_ratio    — rice grains are elongated
-      * surface_texture — rice surface is smooth; stones are speckled / rough
+      * aspect_ratio    — rice grains are elongated (1.6 - 4.5); stones are rounded
+      * surface_texture — rice surface is smooth (roughness 0.05-0.25); stones are rough (> 0.28)
+      * chroma          — raw milled rice is low chroma; wheat is high chroma (> 30)
+      * lightness       — white rice is bright; handles dark backgrounds and red rice
     """
     weights = cfg["weights"]
     light_cfg = cfg["lightness"]
@@ -347,11 +346,101 @@ def score_rice_confidence(
     aspect_cfg = cfg["aspect_ratio"]
     texture_cfg = cfg["surface_texture"]
 
-    lightness_score = _score_between(
-        features["mean_l_star"],
-        light_cfg["zero_credit_l_star"],
-        light_cfg["full_credit_l_star"],
+    aspect_ratio = float(features.get("aspect_ratio", 1.0))
+    roughness = float(features.get("surface_roughness", 0.0))
+    chroma = float(features.get("chroma", 0.0))
+    mean_l = float(features.get("mean_l_star", 0.0))
+    mean_a = float(features.get("mean_a_star", 0.0))
+    mean_b = float(features.get("mean_b_star", 0.0))
+    area = float(features.get("area_pixels", 0.0))
+
+    is_cluster = area > 50000 and roughness < 0.28 and mean_l > 35.0
+
+    # 1. Definite Stone check: rounded (AR < 1.65) AND rough/dark (roughness >= 0.28)
+    if aspect_ratio < 1.65 and roughness >= 0.28 and not is_cluster:
+        cues = {
+            "lightness": 0.1,
+            "background_contrast": 0.0,
+            "chroma": 0.5,
+            "aspect_ratio": 0.0,
+            "surface_texture": 0.0,
+            "hard_negative": "stone_shape_and_texture",
+        }
+        return 0.10, cues
+
+    # Extreme round non-rice (coins, round stones, circular beads)
+    if aspect_ratio < 1.35 and not is_cluster:
+        cues = {
+            "lightness": 0.2,
+            "background_contrast": 0.0,
+            "chroma": 0.5,
+            "aspect_ratio": 0.0,
+            "surface_texture": 0.2,
+            "hard_negative": "rounded_non_rice",
+        }
+        return 0.08, cues
+
+    # Small rough grit/debris
+    if area < 300 and roughness > 0.45:
+        cues = {
+            "lightness": 0.1,
+            "background_contrast": 0.0,
+            "chroma": 0.5,
+            "aspect_ratio": 0.2,
+            "surface_texture": 0.0,
+            "hard_negative": "small_rough_debris",
+        }
+        return 0.05, cues
+
+    # 2. Definite Wheat / yellow seed check: high chroma (>= 30.0) with yellow b* (> 24.0)
+    if chroma >= 30.0 and mean_b > 24.0:
+        cues = {
+            "lightness": 0.4,
+            "background_contrast": 1.0,
+            "chroma": 0.0,
+            "aspect_ratio": 0.8,
+            "surface_texture": 0.0,
+            "hard_negative": "wheat_or_yellow_grain",
+        }
+        return 0.15, cues
+
+    # Aspect score
+    if is_cluster:
+        aspect_score = 0.90
+    else:
+        aspect_score = _score_between(
+            aspect_ratio, aspect_cfg["zero_credit"], aspect_cfg["full_credit"]
+        )
+
+    # Texture score: rice roughness is 0.05 - 0.25 (up to 0.36 for high-res macro)
+    texture_score = 1.0 - _score_between(
+        roughness, texture_cfg["full_credit_roughness"], texture_cfg["zero_credit_roughness"]
     )
+
+    # Chroma score: milled rice 2-18. Red rice 12-25 (with mean_a > 1.5)
+    is_red_rice = (mean_a > 1.5) and aspect_ratio >= 1.6 and roughness < 0.30
+    if is_red_rice:
+        chroma_score = 0.90
+    elif chroma <= chroma_cfg["full_credit_c_star"]:
+        chroma_score = 1.0
+    elif chroma <= chroma_cfg["zero_credit_c_star"]:
+        chroma_score = 1.0 - _score_between(
+            chroma, chroma_cfg["full_credit_c_star"], chroma_cfg["zero_credit_c_star"]
+        ) * 0.7
+    else:
+        chroma_score = 0.10
+
+    # Lightness score: white rice 50-85, red rice 22-50
+    if mean_l >= light_cfg["full_credit_l_star"]:
+        lightness_score = 1.0
+    elif is_red_rice and mean_l >= 22.0:
+        lightness_score = 0.90
+    elif mean_l >= light_cfg["zero_credit_l_star"]:
+        lightness_score = 0.5 + 0.5 * _score_between(
+            mean_l, light_cfg["zero_credit_l_star"], light_cfg["full_credit_l_star"]
+        )
+    else:
+        lightness_score = max(0.0, _score_between(mean_l, 15.0, light_cfg["zero_credit_l_star"]) * 0.5)
 
     background_gray = float(features.get("background_gray", 0.0))
     background_l_star = float(
@@ -361,7 +450,7 @@ def score_rice_confidence(
         )[0, 0, 0]
     ) * 100.0 / 255.0
     contrast_score = 1.0
-    if background_l_star >= light_cfg["bright_background_l_star"]:
+    if background_l_star >= light_cfg.get("bright_background_l_star", 70.0):
         gap_fraction = max(0.0, background_gray - features["mean_gray"]) / max(
             background_gray, 1.0
         )
@@ -372,25 +461,11 @@ def score_rice_confidence(
         )
         lightness_score *= 0.5 + 0.5 * contrast_score
 
-    chroma_score = 1.0 - _score_between(
-        features["chroma"],
-        chroma_cfg["full_credit_c_star"],
-        chroma_cfg["zero_credit_c_star"],
-    )
-    aspect_score = _score_between(
-        features["aspect_ratio"], aspect_cfg["zero_credit"], aspect_cfg["full_credit"]
-    )
-    texture_score = 1.0 - _score_between(
-        features["surface_roughness"],
-        texture_cfg["full_credit_roughness"],
-        texture_cfg["zero_credit_roughness"],
-    )
-
     confidence = (
-        weights["lightness"] * lightness_score
-        + weights["chroma"] * chroma_score
-        + weights["aspect_ratio"] * aspect_score
+        weights["aspect_ratio"] * aspect_score
         + weights["surface_texture"] * texture_score
+        + weights["chroma"] * chroma_score
+        + weights["lightness"] * lightness_score
     )
 
     cues = {
@@ -551,7 +626,7 @@ def detect_rice_detections(image_rgb: np.ndarray) -> List[Dict[str, Any]]:
         heuristic_confidence, cues = score_rice_confidence(features, cfg)
         if model_active:
             learned_confidence = _predict_learned_rice_probability(features, learned_model)
-            confidence = 0.7 * learned_confidence + 0.3 * heuristic_confidence
+            confidence = 0.5 * learned_confidence + 0.5 * heuristic_confidence
             cues["learned_probability"] = round(learned_confidence, 4)
             cues["fused_probability"] = round(confidence, 4)
             model_source = "learned_rice_gate"
@@ -560,12 +635,12 @@ def detect_rice_detections(image_rgb: np.ndarray) -> List[Dict[str, Any]]:
             confidence = heuristic_confidence
             model_source = "classical_cv_rice_gate"
 
-        min_heuristic = max(0.45, threshold * 0.7)
-        min_learned = 0.55
+        # The detection counts as rice if fused or heuristic confidence meets threshold,
+        # provided it is not an identified hard negative (stone or wheat).
         is_rice = (
-            confidence >= threshold
-            and heuristic_confidence >= min_heuristic
-            and learned_confidence >= min_learned
+            (confidence >= threshold or heuristic_confidence >= threshold)
+            and heuristic_confidence >= 0.45
+            and cues.get("hard_negative") is None
         )
 
         if is_rice:

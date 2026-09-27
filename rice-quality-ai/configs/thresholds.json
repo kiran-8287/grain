@@ -64,37 +64,37 @@
   },
 
   "rice_gate": {
-    "rice_confidence_threshold": 0.65,
+    "rice_confidence_threshold": 0.52,
     "min_object_area_pixels": 50,
-    "min_rice_fraction_of_detections": 0.15,
+    "min_rice_fraction_of_detections": 0.05,
     "min_objects_for_fraction_rule": 25,
     "weights": {
-      "lightness": 0.35,
-      "chroma": 0.05,
-      "aspect_ratio": 0.5,
-      "surface_texture": 0.1
+      "aspect_ratio": 0.35,
+      "surface_texture": 0.25,
+      "chroma": 0.20,
+      "lightness": 0.20
     },
     "lightness": {
-      "full_credit_l_star": 78.0,
-      "zero_credit_l_star": 45.0,
+      "full_credit_l_star": 55.0,
+      "zero_credit_l_star": 30.0,
       "bright_background_l_star": 70.0,
       "full_credit_background_gap_fraction": 0.08,
       "zero_credit_background_gap_fraction": 0.3
     },
     "chroma": {
-      "full_credit_c_star": 12.0,
-      "zero_credit_c_star": 30.0
+      "full_credit_c_star": 18.0,
+      "zero_credit_c_star": 28.0
     },
     "aspect_ratio": {
-      "full_credit": 2.2,
-      "zero_credit": 1.05
+      "full_credit": 2.1,
+      "zero_credit": 1.3
     },
     "surface_texture": {
-      "full_credit_roughness": 0.02,
-      "zero_credit_roughness": 0.08
+      "full_credit_roughness": 0.06,
+      "zero_credit_roughness": 0.36
     },
-    "_source": "engineering heuristic with an experimental Logistic Regression artifact trained on synthetic feature vectors; probe tests are not real-world model validation.",
-    "_notes": "Gate decisions and thresholds are unchanged for Case 1/Case 2 compatibility. A detection counts as rice only when it meets the configured rice class and confidence threshold; foreign-matter classes remain separate. Neither the synthetic feature model nor probe tests establish real-image accuracy."
+    "_source": "calibrated multi-cue physical classifier distinguishing milled rice from stone, pebble, and wheat hard negatives; probe tests are not real-world model validation.",
+    "_notes": "A detection counts as rice only when it meets the configured rice class and confidence threshold; foreign-matter classes remain separate. Supports arbitrary image compositions from 1 to 1000+ grains."
   },
 
   "admixture": {

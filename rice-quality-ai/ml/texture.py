@@ -66,13 +66,18 @@ def compute_glcm(
             dx = int(round(d * np.cos(angle)))
             dy = int(round(-d * np.sin(angle)))
             
-            for i in range(max(0, -dy), min(h, h - dy)):
-                for j in range(max(0, -dx), min(w, w - dx)):
-                    row_val = quantized[i, j]
-                    col_val = quantized[i + dy, j + dx]
-                    if not (valid_mask[i, j] and valid_mask[i + dy, j + dx]):
-                        continue
-                    glcm[row_val, col_val] += 1
+            y1, y2 = max(0, -dy), min(h, h - dy)
+            x1, x2 = max(0, -dx), min(w, w - dx)
+            if y2 <= y1 or x2 <= x1:
+                continue
+                
+            m1 = valid_mask[y1:y2, x1:x2]
+            m2 = valid_mask[y1 + dy:y2 + dy, x1 + dx:x2 + dx]
+            valid = m1 & m2
+            if np.any(valid):
+                r_vals = quantized[y1:y2, x1:x2][valid]
+                c_vals = quantized[y1 + dy:y2 + dy, x1 + dx:x2 + dx][valid]
+                np.add.at(glcm, (r_vals, c_vals), 1.0)
     
     # Normalize
     total = glcm.sum()

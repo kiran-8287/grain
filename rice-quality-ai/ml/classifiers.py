@@ -38,6 +38,10 @@ def _get_torch():
     if _torch is None:
         import torch as _torch_mod
         import torchvision.transforms as _T_mod
+        try:
+            _torch_mod.set_num_threads(1)
+        except Exception:
+            pass
         _torch = _torch_mod
         _T = _T_mod
     return _torch, _T

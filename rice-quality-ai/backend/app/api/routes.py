@@ -6,10 +6,34 @@ import base64
 import io
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
+import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import PlainTextResponse
+
+
+def _sanitize_numpy(obj: Any) -> Any:
+    """
+    Recursively convert numpy scalars / arrays to native Python types so that
+    FastAPI's default JSON serializer never encounters a numpy.int32 /
+    numpy.float64 / numpy.bool_ and raises a 500.
+    """
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _sanitize_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_numpy(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_numpy(v) for v in obj)
+    return obj
 
 from backend.app.schemas.models import (
     AnalysisResultResponse,
@@ -94,7 +118,10 @@ async def analyze_rice_image(
         # If it was an image validation/decoding error
         raise HTTPException(status_code=400, detail=result.get("error"))
 
-    return result
+    # Sanitize all numpy scalars/arrays → native Python types before FastAPI
+    # serializes to JSON.  numpy.int32 bboxes and numpy.float64 colour scores
+    # cause a 500 "Object of type int32 is not JSON serializable" otherwise.
+    return _sanitize_numpy(result)
 
 
 @router.get("/analysis/{job_id}", response_model=JobStatusResponse)
