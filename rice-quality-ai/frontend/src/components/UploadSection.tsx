@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Sliders, CheckCircle2, AlertCircle, FileUp } from 'lucide-react';
+import { Upload, Image as ImageIcon, CheckCircle2, FileUp } from 'lucide-react';
 
 interface UploadSectionProps {
-  onAnalyze: (file: File, options: { grade: string; referencePixels?: number; referenceMm?: number }) => void;
+  onAnalyze: (file: File) => void;
   isLoading: boolean;
 }
 
@@ -10,10 +10,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [grade, setGrade] = useState<'grade_a' | 'common'>('grade_a');
-  const [enableManualScale, setEnableManualScale] = useState(false);
-  const [refPixels, setRefPixels] = useState<string>('100');
-  const [refMm, setRefMm] = useState<string>('10');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = (files: FileList | null) => {
@@ -49,11 +45,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
     e.preventDefault();
     if (!selectedFile) return;
 
-    onAnalyze(selectedFile, {
-      grade,
-      referencePixels: enableManualScale ? parseFloat(refPixels) : undefined,
-      referenceMm: enableManualScale ? parseFloat(refMm) : undefined,
-    });
+    onAnalyze(selectedFile);
   };
 
   return (
@@ -116,91 +108,14 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
           )}
         </div>
 
-        {/* Options Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-surface-subtle border border-border rounded-xl p-4">
-          {/* Target Standard Profile */}
+        {/* Calibration Info */}
+        <div className="text-xs text-text-secondary bg-surface p-2.5 rounded-lg border border-border flex items-start gap-2">
+          <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
           <div>
-            <label className="block text-xs font-semibold text-text-primary uppercase tracking-wider mb-2">
-              Standard Grade Reference
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setGrade('grade_a')}
-                className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition ${
-                  grade === 'grade_a'
-                    ? 'border-brand bg-brand-light text-brand'
-                    : 'border-border bg-surface text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <div className="font-semibold">Grade A Rice</div>
-                <div className="text-[10px] text-text-muted mt-0.5">Historical/reference limit (6.0%); current season unverified</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setGrade('common')}
-                className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition ${
-                  grade === 'common'
-                    ? 'border-brand bg-brand-light text-brand'
-                    : 'border-border bg-surface text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                <div className="font-semibold">Common Rice</div>
-                <div className="text-[10px] text-text-muted mt-0.5">Historical/reference profile; current season unverified</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Metric Calibration Toggle */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-text-primary uppercase tracking-wider">
-                Metric Calibration
-              </label>
-              <button
-                type="button"
-                onClick={() => setEnableManualScale(!enableManualScale)}
-                className="text-xs text-brand hover:underline flex items-center gap-1"
-              >
-                <Sliders className="w-3 h-3" />
-                {enableManualScale ? 'Disable Manual Scale' : 'Set Manual Scale (mm)'}
-              </button>
-            </div>
-
-            {enableManualScale ? (
-              <div className="grid grid-cols-2 gap-2 bg-surface p-2 rounded-lg border border-border text-xs">
-                <div>
-                  <span className="text-[10px] text-text-muted block mb-1">Known Object Pixels</span>
-                  <input
-                    type="number"
-                    value={refPixels}
-                    onChange={(e) => setRefPixels(e.target.value)}
-                    className="w-full bg-surface-subtle border border-border rounded px-2 py-1 text-text-primary focus:outline-none focus:border-brand"
-                    placeholder="e.g. 100"
-                  />
-                </div>
-                <div>
-                  <span className="text-[10px] text-text-muted block mb-1">Physical Size (mm)</span>
-                  <input
-                    type="number"
-                    value={refMm}
-                    onChange={(e) => setRefMm(e.target.value)}
-                    className="w-full bg-surface-subtle border border-border rounded px-2 py-1 text-text-primary focus:outline-none focus:border-brand"
-                    placeholder="e.g. 10"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-text-secondary bg-surface p-2.5 rounded-lg border border-border flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-medium text-text-primary">Automatic Reference Detection Active:</span>
-                  <span className="block text-[11px] text-text-muted mt-0.5">
-                    ArUco markers are detected automatically. If absent, measurements are accurately reported in pixels without inventing fake millimeters.
-                  </span>
-                </div>
-              </div>
-            )}
+            <span className="font-medium text-text-primary">Automatic Reference Detection Active:</span>
+            <span className="block text-[11px] text-text-muted mt-0.5">
+              ArUco markers are detected automatically. If absent, measurements are accurately reported in pixels without inventing fake millimeters.
+            </span>
           </div>
         </div>
 

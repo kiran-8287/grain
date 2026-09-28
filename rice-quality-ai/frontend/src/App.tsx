@@ -42,10 +42,7 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleAnalyze = async (
-    file: File,
-    options: { grade: string; referencePixels?: number; referenceMm?: number }
-  ) => {
+  const handleAnalyze = async (file: File) => {
     setIsLoading(true);
     setErrorMessage(null);
     setNonRiceMessage(null);
@@ -54,11 +51,7 @@ export const App: React.FC = () => {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('grade', options.grade);
-    if (options.referencePixels && options.referenceMm) {
-      formData.append('reference_pixels', options.referencePixels.toString());
-      formData.append('reference_mm', options.referenceMm.toString());
-    }
+    formData.append('grade', 'grade_a');
 
     try {
       const response = await fetch('/api/analyze', {
