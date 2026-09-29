@@ -12,7 +12,7 @@ import numpy as np
 import yaml
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = Path('A:/grain/rice-quality-ai')
+ROOT = Path('A:/grain')
 DATASET_ROOT = ROOT / 'data' / 'datasets'
 OUTPUT_ROOT = ROOT / 'data' / 'audit' / 'full_visual_segmentation'
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp'}
@@ -436,10 +436,14 @@ def inspect_mendeley_branches() -> Dict[str, Any]:
 
 def audit_dataset(dataset_name: str) -> Dict[str, Any]:
     dataset_root = segmentation_root(dataset_name)
+    if not dataset_root.is_dir():
+        raise FileNotFoundError(f'Missing segmentation source directory: {dataset_root}')
+    images = image_files(dataset_root)
+    if not images:
+        raise RuntimeError(f'No source images found under: {dataset_root}')
     output_dir = OUTPUT_ROOT / dataset_name
     output_dir.mkdir(parents=True, exist_ok=True)
     names = class_names_for(dataset_root)
-    images = image_files(dataset_root)
     label_files = {
         path for labels_dir in dataset_root.rglob('labels') if labels_dir.is_dir()
         for path in labels_dir.rglob('*.txt') if path.is_file()
@@ -676,7 +680,76 @@ def write_comparison(summaries: Dict[str, Dict[str, Any]]) -> None:
     (OUTPUT_ROOT / 'datasets_01_to_05_comparison.md').write_text('\n'.join(lines), encoding='utf-8')
 
 
+def write_blocked_artifacts(missing_sources: List[Tuple[str, Path, str]]) -> None:
+    reason = 'Audit not run: the extracted source directories are absent or contain no images. No statistics or class conclusions are available.'
+    for dataset_name, source_root, detail in missing_sources:
+        output_dir = OUTPUT_ROOT / dataset_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        blocked_summary = {
+            'dataset': dataset_name,
+            'status': 'BLOCKED',
+            'audit_completed': False,
+            'expected_source_directory': source_root.as_posix(),
+            'blocker': detail,
+            'note': reason,
+        }
+        with (output_dir / 'full_summary.json').open('w', encoding='utf-8') as destination:
+            json.dump(blocked_summary, destination, indent=2)
+
+    lines = [
+        '# Full Read-Only Audit: Datasets 01–05',
+        '',
+        '**Status: BLOCKED.** No audit statistics were computed because the extracted source directories are unavailable in the current workspace.',
+        '',
+        'The audit runner found only `data/datasets/07_Raw_Rice_Seed`; the five requested source folders are absent. Zero-image output is not a valid audit result. No source files, ZIP files, model code, frontend, or deployment files were modified. No training, merging, or annotation conversion was performed.',
+        '',
+        '## Missing sources',
+        '',
+        '| Dataset | Expected source directory | Status |',
+        '|---|---|---|',
+    ]
+    for dataset_name, source_root, detail in missing_sources:
+        lines.append(f'| {dataset_name} | `{source_root.as_posix()}` | {detail} |')
+    lines.extend([
+        '',
+        '## Comparison tables',
+        '',
+        '| Dataset | Images | Instances | Mean grains/image | Touching | Overlap | Dense | Invalid | Empty | Separated compatibility |',
+        '|---|---:|---:|---:|---:|---:|---:|---:|---:|---|',
+    ])
+    for dataset_name in TARGET_DATASETS:
+        lines.append(f'| {dataset_name} | Not audited | Not audited | Not audited | Not audited | Not audited | Not audited | Not audited | Not audited | Undetermined |')
+    lines.extend([
+        '',
+        '| Dataset | Class structure | Single-grain polygons? | Professor setup similarity | Potential role |',
+        '|---|---|---|---|---|',
+    ])
+    for dataset_name in TARGET_DATASETS:
+        lines.append(f'| {dataset_name} | Not audited | Undetermined | Undetermined | Undetermined |')
+    lines.extend([
+        '',
+        'No dataset suitability or training-combination decision is made. Restore or point the audit runner at the extracted source directories, then rerun it to populate these tables, JSON summaries, and representative overlays.',
+        '',
+    ])
+    (OUTPUT_ROOT / 'datasets_01_to_05_comparison.md').write_text('\n'.join(lines), encoding='utf-8')
+
+
 def main() -> None:
+    missing_sources: List[Tuple[str, Path, str]] = []
+    for dataset_name in TARGET_DATASETS:
+        source_root = segmentation_root(dataset_name)
+        if not source_root.is_dir():
+            missing_sources.append((dataset_name, source_root, 'source directory missing'))
+        elif not image_files(source_root):
+            missing_sources.append((dataset_name, source_root, 'no images found'))
+    if missing_sources:
+        write_blocked_artifacts(missing_sources)
+        print('Audit blocked: requested extracted source directories are unavailable.')
+        for name, source_root, detail in missing_sources:
+            print(name, detail, source_root)
+        print('Wrote blocked status under:', OUTPUT_ROOT)
+        return
+
     summaries = {name: audit_dataset(name) for name in TARGET_DATASETS}
     write_comparison(summaries)
     print('Generated comparison:', OUTPUT_ROOT / 'datasets_01_to_05_comparison.md')

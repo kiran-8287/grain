@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = Path('A:/grain/rice-quality-ai')
+ROOT = Path('A:/grain')
 DATASET_ROOT = ROOT / 'data' / 'datasets'
 OUTPUT_ROOT = ROOT / 'data' / 'audit' / 'full_visual_segmentation'
 TARGET_DATASETS = ['06_Rice_Grain_Segmentation', '08_Rice_Grain']

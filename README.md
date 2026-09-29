@@ -15,14 +15,13 @@ This repository has been reset to a clean baseline: no old dataset archives, mod
 ## Run the backend
 
 ```bash
-cd rice-quality-ai
 python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## Run the frontend
 
 ```bash
-cd rice-quality-ai/frontend
+cd frontend
 npm install
 npm run dev
 ```

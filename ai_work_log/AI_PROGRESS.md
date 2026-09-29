@@ -35,12 +35,12 @@ These folders were found as extracted real datasets and are ready for source-gro
 This project must remain honest: downloaded datasets are local and staged, but the task is not yet at a final approved training stage. Any future model training should only proceed after manifest review, class-map validation, and source-group safety checks.
 
 ### Files/areas touched for this stage
-- `rice-quality-ai/ml/rice_gate.py`
-- `rice-quality-ai/ml/pipeline.py`
-- `rice-quality-ai/tests/test_rice_gate.py`
-- `rice-quality-ai/data/manifests/datasets.json`
-- `rice-quality-ai/data/processed/`
-- `rice-quality-ai/progress/WORK_LOG.md`
+- `ml/rice_gate.py`
+- `ml/pipeline.py`
+- `tests/test_rice_gate.py`
+- `data/manifests/datasets.json`
+- `data/processed/`
+- `progress/WORK_LOG.md`
 - `ai_work_log/AI_PROGRESS.md` (this file)
 
 ### Next step
@@ -88,16 +88,16 @@ Perform the source-group and class-map audit for each dataset and then create th
 - Added a bounded large-sample fast path so the dense 50-grain pipeline remains under the processing-time threshold.
 
 ### Files changed
-- `rice-quality-ai/data/manifests/datasets.json`
-- `rice-quality-ai/training/train_rice_gate.py`
-- `rice-quality-ai/ml/segmentation.py`
-- `rice-quality-ai/ml/pipeline.py`
-- `rice-quality-ai/progress/WORK_LOG.md`
+- `data/manifests/datasets.json`
+- `training/train_rice_gate.py`
+- `ml/segmentation.py`
+- `ml/pipeline.py`
+- `progress/WORK_LOG.md`
 
 ### Verification evidence
-- `cd 'A:\grain\rice-quality-ai'; python -m pytest tests/test_audit_metadata.py::test_public_dataset_manifest_distinguishes_candidates_from_training_data tests/test_audit_metadata.py::test_legacy_gate_training_requires_real_manifest tests/test_pipeline_24_cases.py::test_case_24_huge_sample -q`
+- `cd 'A:\grain'; python -m pytest tests/test_audit_metadata.py::test_public_dataset_manifest_distinguishes_candidates_from_training_data tests/test_audit_metadata.py::test_legacy_gate_training_requires_real_manifest tests/test_pipeline_24_cases.py::test_case_24_huge_sample -q`
   - Result: 3 passed in 2.54s
-- `cd 'A:\grain\rice-quality-ai'; python -m pytest -q`
+- `cd 'A:\grain'; python -m pytest -q`
   - Result: 63 passed, 1 warning in 50.34s
 
 ### Current status
@@ -107,8 +107,8 @@ Perform the source-group and class-map audit for each dataset and then create th
 
 ## 2026-09-27 — Downloaded dataset audit and training readiness decision
 
-- Audited all five downloaded/extracted datasets under `rice-quality-ai/data/raw` and corrected stale inventory claims.
-- Added `rice-quality-ai/data/manifests/dataset_audit_2026-09-27.json`; updated `datasets.json` and `dataset_ready_map.json` with the measured formats/counts and task blockers.
+- Audited all five downloaded/extracted datasets under `data/raw` and corrected stale inventory claims.
+- Added `data/manifests/dataset_audit_2026-09-27.json`; updated `datasets.json` and `dataset_ready_map.json` with the measured formats/counts and task blockers.
 - GrainDet: 24,767 PNGs; filename-derived groups overlap train/val 1,831, train/test 3,286, val/test 927. All GrainDet basenames also recur in GrainSet.
 - GrainSet: 30,962 image/mask pairs; 2,473 filename-derived groups occur in both train and test. License conflict remains; separate `rice.xml` is not local.
 - Murat Koklu: 75,000 images represent five rice varieties, not project defect/no-rice labels.
@@ -129,4 +129,4 @@ Final verification addendum: `python -m pytest -q` -> 63 passed, 1 Starlette dep
 - Candidate is not approved until local contents, class counts, and original sample groups are audited.
 - `training/train_rice_gate.py` is also incomplete for real data: it blocks synthetic fitting and raises `NotImplementedError` after a real manifest check.
 - Audit test: `python -m pytest tests/test_audit_metadata.py -q` -> 5 passed. No model trained and no approved manifest created.
-- Next: download to `rice-quality-ai/data/raw/roboflow_wheat_grain_gate_negatives_v1/`, audit locally, obtain safe rice-positive source groups, then implement and validate real-image training.
+- Next: download to `data/raw/roboflow_wheat_grain_gate_negatives_v1/`, audit locally, obtain safe rice-positive source groups, then implement and validate real-image training.
