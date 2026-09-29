@@ -29,7 +29,6 @@ frontend/build/
 # Project workflow artifacts
 data/
 datasets/
-models/
 runs/
 weights/
 checkpoints/
@@ -38,6 +37,20 @@ progress/
 uploads/
 tmp/
 *.tmp
+
+# Model artifacts (large binaries)
+models/*.pth
+models/*.pt
+models/*.onnx
+models/*.h5
+models/*.pkl
+models/*.joblib
+models/**/*.pth
+models/**/*.pt
+models/**/*.onnx
+models/**/*.h5
+models/**/*.pkl
+models/**/*.joblib
 
 # Logs
 logs/
