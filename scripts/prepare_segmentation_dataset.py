@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
@@ -118,7 +119,7 @@ def load_audit_records() -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]
                 'image_height': dimensions['height'],
                 'polygon_count': record['valid_polygons'],
                 'class_ids_present': class_ids_for_record(record, class_names),
-                'class_names_present': sorted(record.get('class_instance_counts', {}).keys()),
+                'class_names_present': sorted(record.get('class_instance_counts', {}).keys()) if class_names else [],
                 'touching_flag': bool(record.get('touching_grains')),
                 'overlap_flag': bool(record.get('overlapping_grains')),
                 'dense_flag': bool(record.get('dense_layout')),
@@ -616,6 +617,39 @@ def build() -> Dict[str, Any]:
     }
 
 
+def refresh_manifests_only() -> None:
+    if not PREPARED_ROOT.is_dir():
+        raise FileNotFoundError(f'Prepared dataset not found: {PREPARED_ROOT}')
+    previous_path = PREPARED_ROOT / 'dataset_manifest.json'
+    previous = json.loads(previous_path.read_text(encoding='utf-8'))
+    previous_by_image = {row['original_image_path']: row for row in previous['records']}
+    _, rows = load_audit_records()
+    for row in rows:
+        old = previous_by_image.get(row['original_image_path'])
+        if old:
+            for field in ['prepared_split', 'prepared_image_path', 'prepared_label_path', 'split_group']:
+                row[field] = old.get(field, '')
+    manifest_json = {
+        'audit_source': 'data/audit/full_visual_segmentation/',
+        'created_date': '2026-09-29',
+        'target_ontology': [{'class_id': TARGET_CLASS_ID, 'class_name': TARGET_CLASS_NAME}],
+        'included_image_count': sum(row['include_candidate'] for row in rows),
+        'excluded_image_count': sum(not row['include_candidate'] for row in rows),
+        'candidate_policy': 'Include only 06_Rice_Grain_Segmentation images that are valid, nonempty, and separated under the audit heuristic. No other dataset or source class is mapped automatically.',
+        'records': rows,
+    }
+    (PREPARED_ROOT / 'dataset_manifest.json').write_text(json.dumps(manifest_json, indent=2), encoding='utf-8')
+    manifest_columns = [
+        'source_dataset', 'original_image_path', 'original_label_path', 'image_width', 'image_height',
+        'polygon_count', 'class_ids_present', 'class_names_present', 'touching_flag', 'overlap_flag',
+        'dense_flag', 'empty_label_flag', 'missing_label_flag', 'invalid_annotation_flag',
+        'separated_heuristic', 'include_candidate', 'exclusion_category', 'exclusion_reason',
+        'source_split', 'prepared_split', 'prepared_image_path', 'prepared_label_path', 'split_group',
+    ]
+    write_csv(PREPARED_ROOT / 'dataset_manifest.csv', rows, manifest_columns)
+    print('Refreshed dataset manifests only; prepared image and label copies were not changed.')
+
+
 def main() -> None:
     result = build()
     print('Prepared dataset at:', PREPARED_ROOT)
@@ -623,4 +657,10 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--refresh-manifests-only', action='store_true')
+    arguments = parser.parse_args()
+    if arguments.refresh_manifests_only:
+        refresh_manifests_only()
+    else:
+        main()
