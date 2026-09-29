@@ -3,6 +3,7 @@ FastAPI Main Application for Rice Quality AI.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -33,10 +34,12 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for React frontend (Vite default port 5173, etc.)
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173,http://localhost:3000")
+ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,4 +66,6 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=port, reload=True)

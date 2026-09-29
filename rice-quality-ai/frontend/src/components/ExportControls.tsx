@@ -1,6 +1,8 @@
 import React from 'react';
 import { Download, FileSpreadsheet, FileCode, RotateCcw } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 interface ExportControlsProps {
   jobId?: string;
   onReset: () => void;
@@ -9,7 +11,7 @@ interface ExportControlsProps {
 export const ExportControls: React.FC<ExportControlsProps> = ({ jobId, onReset }) => {
   const downloadFile = (endpoint: string, filename: string) => {
     if (!jobId) return;
-    const url = `/api/analysis/${jobId}/export/${endpoint}`;
+    const url = `${API_BASE}/api/analysis/${jobId}/export/${endpoint}`;
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;

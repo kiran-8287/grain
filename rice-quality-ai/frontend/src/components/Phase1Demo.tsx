@@ -21,6 +21,8 @@ import {
 
 const CONFIDENCE_THRESHOLDS = { HIGH: 0.85, MEDIUM: 0.6 };
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 function getConfidenceLabel(confidence: number): 'HIGH' | 'MEDIUM' | 'LOW' {
   if (confidence >= CONFIDENCE_THRESHOLDS.HIGH) return 'HIGH';
   if (confidence >= CONFIDENCE_THRESHOLDS.MEDIUM) return 'MEDIUM';
@@ -117,7 +119,7 @@ export const Phase1Demo: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const endpoints = ['/api/phase1/analyze', '/api/analyze'];
+      const endpoints = [`${API_BASE}/api/phase1/analyze`, `${API_BASE}/api/analyze`];
       let response: Response | null = null;
       let lastError: any = null;
 

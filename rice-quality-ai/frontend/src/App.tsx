@@ -12,6 +12,8 @@ import { ExportControls } from './components/ExportControls';
 import { AnalysisResult, GrainInstance } from './types';
 import { AlertCircle, RefreshCw, XCircle } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -26,7 +28,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch('/health');
+        const res = await fetch(`${API_BASE}/health`);
         if (res.ok) {
           const data = await res.json();
           setBackendHealthy(data.status === 'healthy');
@@ -54,7 +56,7 @@ export const App: React.FC = () => {
     formData.append('grade', 'grade_a');
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(`${API_BASE}/api/analyze`, {
         method: 'POST',
         body: formData,
       });
