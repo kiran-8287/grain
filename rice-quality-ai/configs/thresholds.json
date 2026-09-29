@@ -1,109 +1,24 @@
 {
-  "_description": "All configurable thresholds with provenance. SOURCE types: official, literature, engineering_heuristic, learned_from_dataset",
-  
   "broken": {
     "whole_kernel_fraction": 0.75,
-    "robust_filter_fraction": 0.85,
-    "robust_iterations": 3,
     "small_broken_max_fraction": 0.25,
-    "_source": "official — kernel below three-fourths of whole-kernel length",
-    "_notes": "Small broken pieces (< 1/4 of whole kernel length) tracked separately per standard"
+    "_source": "application_default"
   },
-
-  "chalky": {
-    "bright_pixel_l_threshold": 85,
-    "bright_pixel_fraction_threshold": 0.3,
-    "glcm_distances": [1, 3],
-    "glcm_angles": [0, 0.7854, 1.5708, 2.3562],
-    "_source": "descriptive feature threshold only; not a chalky classification rule; requires calibration against labeled grains"
-  },
-
-  "red": {
-    "a_star_mean_threshold": 10.0,
-    "hue_red_low": [0, 50, 50],
-    "hue_red_high": [10, 255, 255],
-    "hue_red_low2": [170, 50, 50],
-    "hue_red_high2": [180, 255, 255],
-    "red_area_fraction_threshold": 0.15,
-    "_source": "engineering_heuristic — colour-based proxy for red cuticle coverage"
-  },
-
-  "discoloured": {
-    "delta_e_threshold": 15.0,
-    "discoloured_area_fraction_threshold": 0.2,
-    "_source": "engineering_heuristic — LAB colour distance (DeltaE)"
-  },
-
-  "dehusked": {
-    "bran_coverage_threshold": 0.25,
-    "brown_hue_low": [10, 40, 40],
-    "brown_hue_high": [30, 255, 200],
-    "_source": "official concept — more than one-quarter surface covered with bran; method is visual proxy only"
-  },
-
-  "immature_shrunken": {
-    "breadth_ratio_threshold": 0.7,
-    "area_ratio_threshold": 0.5,
-    "solidity_threshold": 0.85,
-    "_source": "engineering_heuristic — geometry + texture proxy"
-  },
-
   "segmentation": {
     "confidence_threshold": 0.5,
     "nms_threshold": 0.3,
     "min_grain_area_pixels": 50,
     "merge_detection_area_ratio": 2.5,
     "merge_detection_aspect_ratio": 4.0,
-    "_source": "engineering_heuristic"
+    "_source": "application_default"
   },
-
-  "foreign_matter": {
-    "confidence_threshold": 0.4,
-    "nms_threshold": 0.45,
-    "grain_mask_exclusion_padding_pixels": 3,
-    "_source": "engineering_heuristic"
-  },
-
   "rice_gate": {
     "rice_confidence_threshold": 0.52,
     "min_object_area_pixels": 50,
     "min_rice_fraction_of_detections": 0.05,
     "min_objects_for_fraction_rule": 25,
-    "weights": {
-      "aspect_ratio": 0.35,
-      "surface_texture": 0.25,
-      "chroma": 0.20,
-      "lightness": 0.20
-    },
-    "lightness": {
-      "full_credit_l_star": 55.0,
-      "zero_credit_l_star": 30.0,
-      "bright_background_l_star": 70.0,
-      "full_credit_background_gap_fraction": 0.08,
-      "zero_credit_background_gap_fraction": 0.3
-    },
-    "chroma": {
-      "full_credit_c_star": 18.0,
-      "zero_credit_c_star": 28.0
-    },
-    "aspect_ratio": {
-      "full_credit": 2.1,
-      "zero_credit": 1.3
-    },
-    "surface_texture": {
-      "full_credit_roughness": 0.06,
-      "zero_credit_roughness": 0.36
-    },
-    "_source": "calibrated multi-cue physical classifier distinguishing milled rice from stone, pebble, and wheat hard negatives; probe tests are not real-world model validation.",
-    "_notes": "A detection counts as rice only when it meets the configured rice class and confidence threshold; foreign-matter classes remain separate. Supports arbitrary image compositions from 1 to 1000+ grains."
+    "_source": "application_default"
   },
-
-  "admixture": {
-    "mahalanobis_threshold": 3.0,
-    "min_grains_for_analysis": 10,
-    "_source": "engineering_heuristic — statistical outlier detection"
-  },
-
   "image_quality": {
     "blur_threshold_good": 100,
     "blur_threshold_fair": 50,
@@ -116,17 +31,11 @@
     "unreliable_low_quality_segmentation_fraction": 0.5,
     "unreliable_clipped_pixel_fraction": 0.5,
     "unreliable_illumination_uniformity_below": 0.15,
-    "_source": "engineering_heuristic — hard-failure criteria and score thresholds require calibration against human-rated images"
+    "_source": "application_default"
   },
-
-  "sample_warning": {
-    "small_sample_threshold": 30,
-    "_source": "engineering_heuristic — configurable statistical warning, not an official government threshold"
-  },
-
   "calibration": {
     "aruco_dictionary": "DICT_4X4_50",
     "marker_size_mm": 20.0,
-    "_source": "engineering_heuristic"
+    "_source": "application_default"
   }
 }

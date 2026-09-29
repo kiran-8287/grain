@@ -1,54 +1,23 @@
-﻿# CURRENT STATUS — GRAIN QUALITY ANALYZER
+# Current Status
 
-> **Generated:** 2026-09-28
-> **Scope:** Phase 1 audit. Grading and 14-parameter analysis are out of scope.
+This repository is in a clean reset state while the dataset-driven training phase remains intentionally inactive.
 
----
+## Maintained application components
 
-## 1. What Currently Works
+- FastAPI backend
+- React frontend
+- Rice quality analysis utilities
+- Standards and calibration configuration
+- General image-processing and reporting flow
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| **FastAPI Backend** | ✅ Running | `backend/app/main.py`, uvicorn |
-| **React Frontend** | ✅ Running | Vite + Tailwind, port 5173 |
-| **Classical CV Segmentation** | ✅ Working | Watershed + distance transform |
-| **Background Detection** | ✅ Working | Border-pixel sampling + Otsu |
-| **Grain Splitting** | ⚠️ Partial | Fails on tight clusters, overlaps |
-| **Unique Grain IDs** | ✅ Working | Sequential assignment |
-| **Annotated Overlay** | ✅ Working | Coloured masks + grain IDs |
-| **Rice Gate (Heuristic)** | ✅ Working | Heuristic, not trained model |
-| **Foreign Matter (Heuristic)** | ✅ Working | Colour/shape outlier heuristics |
-| **API: /api/analyze** | ✅ Working | Image upload + analysis |
+## Removed
 
-## 2. What Does NOT Work
+- Downloaded dataset archives and extracted raw/processed data
+- Dataset manifests, conversion scripts, and audit reports
+- Training scripts, evaluation pipelines, and experiment artifacts
+- Old checkpoint/model files and weight directories
+- Obsolete ML test coverage tied to the retired training workflow
 
-| Component | Status | Reason |
-|-----------|--------|--------|
-| **Mask R-CNN Inference** | ❌ Missing | No trained weights |
-| **YOLOv8 Segmentation** | ❌ Missing | Not installed, no training script |
-| **Touching grain separation** | ❌ Unreliable | Watershed merges tight clusters |
-| **Overlapping grain separation** | ❌ Unreliable | Distance transform cannot recover |
-| **Dense scene (100+ grains)** | ❌ Unreliable | Merges large grain portions |
-| **Ground-truth evaluation** | ❌ Missing | No measured mAP, no count error |
-| **`train_segmentation.py`** | ❌ Stub | Only writes JSON manifests |
+## Next step
 
-## 3. Model Weights Status
-
-| Model | Path | Status |
-|-------|------|--------|
-| Mask R-CNN | `models/segmentation/` | JSON configs only — NO WEIGHTS |
-| YOLOv8l-seg | `models/yolo_seg/` | Does not exist yet |
-
-## 4. Dataset Status
-
-| Dataset | Format | Purpose |
-|---------|--------|---------|
-| GrainSet Rice v3 | Images + PNG masks | Instance segmentation (mask type TBD) |
-| GrainDet Rice v2 | 8-class classification | Synthetic data generation |
-
-**Critical:** GrainSet v3 mask type unknown — run `scripts/audit_dataset.py` first.
-
-## 5. Phase 1 Scope
-
-Phase 1 implements: Detection + Instance Segmentation + Foreign Matter.
-Phase 1 does NOT implement: grading, 14-parameter analysis, defect classification.
+After the user manually selects the datasets, the future work will be a fresh training implementation built from a new, clean baseline.

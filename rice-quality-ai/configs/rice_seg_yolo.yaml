@@ -1,6 +1,0 @@
-path: ../datasets/processed/coco
-train: images/train
-val: images/val
-test: images/test
-nc: 2
-names: ['rice_grain', 'foreign_matter']

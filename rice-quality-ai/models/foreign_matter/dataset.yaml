@@ -1,8 +1,0 @@
-path: data/processed/foreign_matter
-train: images/train
-val: images/val
-names:
-  0: stone
-  1: inorganic
-  2: organic
-  3: other_foreign_matter

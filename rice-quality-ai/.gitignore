@@ -26,23 +26,15 @@ frontend/build/
 .env
 .env.local
 
-# Model weights (large files)
-models/**/*.pt
-models/**/*.pth
-models/**/*.onnx
-models/**/*.bin
-models/**/*.h5
-models/**/*.pkl
-models/**/*.joblib
-!models/**/.gitkeep
-
-# Training data (large files)
-data/raw/
-data/processed/
-data/downloads/
-data/runs/
-
-# Temporary files
+# Project workflow artifacts
+data/
+datasets/
+models/
+runs/
+weights/
+checkpoints/
+results/
+progress/
 uploads/
 tmp/
 *.tmp

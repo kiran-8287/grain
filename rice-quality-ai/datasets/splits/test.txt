@@ -1,2 +1,0 @@
-# Placeholder - populated by scripts/create_splits.py
-# One image filename per line.

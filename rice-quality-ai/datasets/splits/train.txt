@@ -1,3 +1,0 @@
-# Placeholder - populated by scripts/create_splits.py
-# One image filename per line.
-# See docs/DATASET.md for the split protocol (70/15/15, density-stratified).
