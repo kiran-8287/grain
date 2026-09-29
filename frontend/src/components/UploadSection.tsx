@@ -53,8 +53,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
       {/* Intro Header */}
       <div className="text-center mb-8">
         <h1 className="text-3xl font-extrabold text-text-primary tracking-tight sm:text-4xl">
-          Automated Rice Grain Quality Analysis
+          Rice Grain Instance Segmentation
         </h1>
+        <p className="text-sm text-text-secondary mt-2 max-w-2xl mx-auto">
+          Upload an image to detect, segment, and count individual rice grains.
+          Mask-based geometric measurements are extracted for each detected grain.
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -131,7 +135,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
             }`}
           >
             <FileUp className="w-4 h-4" />
-            <span>{isLoading ? 'Processing Analysis...' : 'Run Quality Analysis'}</span>
+            <span>{isLoading ? 'Processing Analysis...' : 'Run Segmentation Analysis'}</span>
           </button>
         </div>
       </form>

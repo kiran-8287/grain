@@ -10,10 +10,7 @@ const STAGES = [
   'Detecting rice presence & object bounds',
   'Segmenting individual grains & contours',
   'Measuring per-grain geometry (Length, Breadth, L/B)',
-  'Classifying multi-label grain defects',
-  'Detecting full-image foreign matter objects',
-  'Computing image fractions & geometry diagnostics',
-  'Comparing with historical/reference limits',
+  'Computing geometry diagnostics',
   'Preparing annotated visualization & export report',
 ];
 
@@ -35,7 +32,7 @@ export const ProcessingState: React.FC<ProcessingStateProps> = () => {
 
       <h2 className="text-xl font-bold text-text-primary mb-2">Analyzing Rice Sample</h2>
       <p className="text-xs text-text-secondary mb-8 max-w-sm mx-auto">
-        Running computer vision algorithms and machine learning models across your image...
+        Running instance segmentation and mask-based geometric measurements across your image...
       </p>
 
       {/* Progress Steps */}

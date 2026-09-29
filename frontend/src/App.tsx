@@ -5,9 +5,7 @@ import { ProcessingState } from './components/ProcessingState';
 import { GlobalMetrics } from './components/GlobalMetrics';
 import { AnnotatedViewer } from './components/AnnotatedViewer';
 import { GrainDetailPanel } from './components/GrainDetailPanel';
-import { StandardsScreening } from './components/StandardsScreening';
 import { GrainTable } from './components/GrainTable';
-import { QualityWarningsPanel } from './components/QualityWarningsPanel';
 import { ExportControls } from './components/ExportControls';
 import { AnalysisResult, GrainInstance } from './types';
 import { AlertCircle, RefreshCw, XCircle } from 'lucide-react';
@@ -199,7 +197,7 @@ export const App: React.FC = () => {
             {/* Results Dashboard */}
             {!isLoading && result && (
               <div className="space-y-6 animate-fadeIn">
-                {/* 1. Global Metrics & 14 Project Parameters */}
+                {/* 1. Global Metrics & Geometry Summary */}
                 <GlobalMetrics
                   summary={result.summary}
                   warnings={result.warnings}
@@ -230,19 +228,7 @@ export const App: React.FC = () => {
                   unit={result.summary.measurement_unit}
                 />
 
-                {/* 5. Historical/reference image screening */}
-                <StandardsScreening standards={result.standards} />
-
-                {/* 6. Provenance & Diagnostics */}
-                <QualityWarningsPanel
-                  quality={result.quality}
-                  warnings={result.warnings}
-                  calibrationMode={result.calibration.mode}
-                  pixelsPerMm={result.calibration.pixels_per_mm}
-                  megapixels={result.image.megapixels}
-                />
-
-                {/* 7. Export Controls */}
+                {/* 5. Export Controls */}
                 <ExportControls jobId={result.job_id} onReset={handleReset} />
               </div>
              )}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, ZoomIn, ZoomOut, Maximize2, Crosshair } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Crosshair } from 'lucide-react';
 import { GrainInstance, ForeignObject } from '../types';
 
 interface AnnotatedViewerProps {
@@ -28,10 +28,6 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
   foreignMatter = [],
 }) => {
   const [zoom, setZoom] = useState(1);
-  const [showMasks, setShowMasks] = useState(true);
-  const [showBoxes, setShowBoxes] = useState(true);
-  const [showIds, setShowIds] = useState(true);
-  const [showConfidence, setShowConfidence] = useState(true);
   const [hoveredGrainId, setHoveredGrainId] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -65,59 +61,53 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
     const sx = displayWidth / img.naturalWidth;
     const sy = displayHeight / img.naturalHeight;
 
-    if (showMasks) {
-      for (const grain of grains) {
-        const polygon = grain.mask_polygon;
-        if (!polygon || polygon.length < 3) continue;
-        const isSelected = grain.id === selectedGrainId;
-        const isHovered = grain.id === hoveredGrainId;
-        const alpha = isSelected ? 0.55 : isHovered ? 0.48 : 0.35;
+    for (const grain of grains) {
+      const polygon = grain.mask_polygon;
+      if (!polygon || polygon.length < 3) continue;
+      const isSelected = grain.id === selectedGrainId;
+      const isHovered = grain.id === hoveredGrainId;
+      const alpha = isSelected ? 0.55 : isHovered ? 0.48 : 0.35;
 
-        ctx.beginPath();
-        polygon.forEach(([px, py], i) => {
-          const x = px * sx;
-          const y = py * sy;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.fillStyle = colorForGrain(grain.id, alpha);
-        ctx.fill();
-      }
+      ctx.beginPath();
+      polygon.forEach(([px, py], i) => {
+        const x = px * sx;
+        const y = py * sy;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = colorForGrain(grain.id, alpha);
+      ctx.fill();
     }
 
-    if (showBoxes) {
-      for (const grain of grains) {
-        const [x, y, w, h] = grain.bbox;
-        const isSelected = grain.id === selectedGrainId;
-        const isHovered = grain.id === hoveredGrainId;
-        ctx.strokeStyle = colorForGrain(grain.id, 1);
-        ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
-        ctx.strokeRect(x * sx, y * sy, w * sx, h * sy);
-      }
+    for (const grain of grains) {
+      const [x, y, w, h] = grain.bbox;
+      const isSelected = grain.id === selectedGrainId;
+      const isHovered = grain.id === hoveredGrainId;
+      ctx.strokeStyle = colorForGrain(grain.id, 1);
+      ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
+      ctx.strokeRect(x * sx, y * sy, w * sx, h * sy);
     }
 
-    if (showMasks) {
-      for (const grain of grains) {
-        if (grain.id !== selectedGrainId) continue;
-        const polygon = grain.mask_polygon;
-        if (!polygon || polygon.length < 3) continue;
+    for (const grain of grains) {
+      if (grain.id !== selectedGrainId) continue;
+      const polygon = grain.mask_polygon;
+      if (!polygon || polygon.length < 3) continue;
 
-        ctx.beginPath();
-        polygon.forEach(([px, py], i) => {
-          const x = px * sx;
-          const y = py * sy;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-        ctx.strokeStyle = `hsl(${hueForId(grain.id)}, 80%, 55%)`;
-        ctx.lineWidth = 4;
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      polygon.forEach(([px, py], i) => {
+        const x = px * sx;
+        const y = py * sy;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = `hsl(${hueForId(grain.id)}, 80%, 55%)`;
+      ctx.lineWidth = 4;
+      ctx.stroke();
     }
 
-    if (foreignMatter.length && showBoxes) {
+    if (foreignMatter.length) {
       for (const fm of foreignMatter) {
         const [x, y, w, h] = fm.bbox;
         ctx.save();
@@ -148,18 +138,14 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
       const px = cx * sx;
       const py = cy * sy;
       const label = `#${grain.id}`;
-      const showIdHere = showIds;
-      const showConfHere = showConfidence;
-
-      if (!showIdHere && !showConfHere) continue;
+      const confText = `${Math.round(grain.confidence * 100)}%`;
 
       ctx.font = 'bold 11px Inter, sans-serif';
       const idMetrics = ctx.measureText(label);
-      const confText = `${Math.round(grain.confidence * 100)}%`;
       const confMetrics = ctx.measureText(confText);
       const idW = idMetrics.width + 8;
       const confW = confMetrics.width + 8;
-      const totalW = showIdHere && showConfHere ? idW + confW + 2 : Math.max(idW, confW);
+      const totalW = idW + confW + 2;
       const badgeH = 18;
       const badgeX = px - totalW / 2;
       const badgeY = py - badgeH / 2;
@@ -183,22 +169,18 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
       ctx.stroke();
 
       let cursorX = badgeX + 4;
-      if (showIdHere) {
-        ctx.fillStyle = '#1F2937';
-        ctx.fillText(label, cursorX, badgeY + 13);
-        cursorX += idW;
-      }
-      if (showIdHere && showConfHere) {
-        ctx.fillStyle = colorForGrain(grain.id, 1);
-        ctx.fillRect(cursorX, badgeY + 3, 1, badgeH - 6);
-        cursorX += 2;
-      }
-      if (showConfHere) {
-        ctx.fillStyle = colorForGrain(grain.id, 1);
-        ctx.fillText(confText, cursorX, badgeY + 13);
-      }
+      ctx.fillStyle = '#1F2937';
+      ctx.fillText(label, cursorX, badgeY + 13);
+      cursorX += idW;
+
+      ctx.fillStyle = colorForGrain(grain.id, 1);
+      ctx.fillRect(cursorX, badgeY + 3, 1, badgeH - 6);
+      cursorX += 2;
+
+      ctx.fillStyle = colorForGrain(grain.id, 1);
+      ctx.fillText(confText, cursorX, badgeY + 13);
     }
-  }, [grains, showMasks, showBoxes, showIds, showConfidence, selectedGrainId, hoveredGrainId, foreignMatter]);
+  }, [grains, selectedGrainId, hoveredGrainId, foreignMatter]);
 
   useEffect(() => {
     if (!originalImageUrl) return;
@@ -288,23 +270,6 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
     setTooltipPos(null);
   };
 
-  const toggleButton = (active: boolean, onToggle: () => void, label: string, iconOn: React.ReactNode, iconOff: React.ReactNode) => (
-    <button
-      onClick={onToggle}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-        active
-          ? 'bg-brand text-white border-brand shadow-sm'
-          : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle hover:text-text-primary'
-      }`}
-    >
-      {active ? iconOn : iconOff}
-      {label}
-      <span className={`text-[10px] font-bold ${active ? 'text-white/80' : 'text-text-muted'}`}>
-        {active ? 'ON' : 'OFF'}
-      </span>
-    </button>
-  );
-
   const hoveredGrain = grains.find((g) => g.id === hoveredGrainId) || null;
 
   return (
@@ -319,15 +284,6 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {useCanvas && (
-            <>
-              {toggleButton(showMasks, () => setShowMasks((v) => !v), 'Masks', <Eye className="w-3.5 h-3.5" />, <EyeOff className="w-3.5 h-3.5" />)}
-              {toggleButton(showBoxes, () => setShowBoxes((v) => !v), 'Boxes', <Eye className="w-3.5 h-3.5" />, <EyeOff className="w-3.5 h-3.5" />)}
-              {toggleButton(showIds, () => setShowIds((v) => !v), 'IDs', <Eye className="w-3.5 h-3.5" />, <EyeOff className="w-3.5 h-3.5" />)}
-              {toggleButton(showConfidence, () => setShowConfidence((v) => !v), 'Conf.', <Eye className="w-3.5 h-3.5" />, <EyeOff className="w-3.5 h-3.5" />)}
-            </>
-          )}
-
           {/* Grain Selector Dropdown */}
           <div className="flex items-center gap-1.5 text-xs text-text-secondary">
             <Crosshair className="w-3.5 h-3.5 text-brand" />
@@ -418,8 +374,8 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
       <div className="px-4 py-2 border-t border-border bg-surface-subtle text-[11px] text-text-muted flex items-center justify-between">
         <span>
           {useCanvas
-            ? 'Toggle overlays above. Click a grain to inspect it.'
-            : 'Grains tagged with colored instance masks and #ID tags. Foreign matter shown with red boxes.'}
+            ? 'Click a grain to inspect it. Use dropdown or table to select a grain.'
+            : 'Grains tagged with colored instance masks and #ID tags.'}
         </span>
         <span>Use dropdown or table to select a grain</span>
       </div>

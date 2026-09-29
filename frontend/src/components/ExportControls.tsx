@@ -23,8 +23,8 @@ export const ExportControls: React.FC<ExportControlsProps> = ({ jobId, onReset }
   return (
     <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
       <div>
-        <h4 className="text-sm font-bold text-text-primary">Export Quality Report</h4>
-        <p className="text-xs text-text-secondary">Download complete grain measurements, defect labels, and sample statistics.</p>
+        <h4 className="text-sm font-bold text-text-primary">Export Current Analysis</h4>
+        <p className="text-xs text-text-secondary">Download grain count, confidence, length, breadth, and L/B ratio.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
