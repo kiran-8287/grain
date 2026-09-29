@@ -1,0 +1,15 @@
+{
+  "name": "grain-quality-analysis",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"python backend/app/main.py\" \"cd frontend && npm run dev\"",
+    "dev:backend": "python backend/app/main.py",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
