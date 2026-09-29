@@ -1,5 +1,5 @@
 """
-FastAPI Main Application for Rice Quality AI.
+FastAPI Main Application for GRAIN QUALITY ANALYZER.
 """
 
 import logging
@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger("rice_quality_ai")
 
 app = FastAPI(
-    title="Rice Quality AI API",
+    title="GRAIN QUALITY ANALYZER API",
     description="Automated Image-Based Raw Milled Rice Grain Quality Analysis System",
     version="1.0.0",
 )
@@ -58,7 +58,7 @@ else:
     @app.get("/")
     def read_root():
         return {
-            "message": "Rice Quality AI API is running.",
+            "message": "GRAIN QUALITY ANALYZER API is running.",
             "docs": "/docs",
             "health": "/health",
         }

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class HealthResponse(BaseModel):
     status: str = "healthy"
     version: str = "1.0.0"
-    service: str = "Rice Quality AI Backend"
+    service: str = "GRAIN QUALITY ANALYZER Backend"
     gpu_available: bool = False
     device: str = "cpu"
 

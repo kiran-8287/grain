@@ -551,6 +551,13 @@ def class_structure(dataset_name: str, summary: Dict[str, Any]) -> str:
     return ', '.join(names) if names else 'No class names in metadata'
 
 
+def potential_role(dataset_name: str, summary: Dict[str, Any]) -> str:
+    _, _, role = compatibility(summary)
+    if dataset_name == '03_Rice_Variety' and role == 'Strong candidate':
+        return 'Possible supplementary candidate'
+    return role
+
+
 def single_grain_assessment(summary: Dict[str, Any]) -> str:
     total = summary['total_images']
     if not total:
@@ -606,7 +613,8 @@ def write_comparison(summaries: Dict[str, Dict[str, Any]]) -> None:
     ])
     for name in TARGET_DATASETS:
         summary = summaries[name]
-        separated, similarity, role = compatibility(summary)
+        separated, similarity, _ = compatibility(summary)
+        role = potential_role(name, summary)
         classes = class_structure(name, summary).replace('|', '\\|')
         lines.append(
             f'| {name} | {classes} | {single_grain_assessment(summary)} | {similarity}; {separated} | {role} |'

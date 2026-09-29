@@ -1,5 +1,5 @@
 ﻿"""
-API Routes for Rice Quality AI.
+API Routes for GRAIN QUALITY ANALYZER.
 """
 
 import base64
@@ -50,7 +50,7 @@ def get_health():
     return HealthResponse(
         status="healthy",
         version="1.0.0",
-        service="Rice Quality AI Backend",
+        service="GRAIN QUALITY ANALYZER Backend",
         gpu_available=False,
         device="cpu",
     )

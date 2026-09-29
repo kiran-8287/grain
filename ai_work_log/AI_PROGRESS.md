@@ -1,4 +1,4 @@
-# Rice Quality AI Project Progress Log
+# GRAIN QUALITY ANALYZER Project Progress Log
 
 ## 2026-09-26 — Dataset audit and continuation handoff
 
