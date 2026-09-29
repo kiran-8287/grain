@@ -42,7 +42,7 @@ except Exception:  # pragma: no cover - optional at runtime
     joblib = None
 
 from ml.config import get_model_info, get_project_root, get_threshold
-from ml.foreign_matter import classify_non_rice_object
+from ml.quality.foreign_matter import classify_non_rice_object
 
 logger = logging.getLogger(__name__)
 
@@ -594,7 +594,7 @@ def detect_rice_detections(image_rgb: np.ndarray) -> List[Dict[str, Any]]:
 
     # Same background-aware foreground extraction as the grain segmenter, so the
     # gate and the segmenter always look at the same objects.
-    from ml.segmentation import extract_foreground_mask
+    from ml.segmentation.segmentation import extract_foreground_mask
 
     binary, _is_dark_bg, meta = extract_foreground_mask(image_rgb)
     background_gray = float(meta.get("bg_gray", 255.0))

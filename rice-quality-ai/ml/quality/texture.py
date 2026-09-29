@@ -136,7 +136,7 @@ def extract_chalky_features(
     - GLCM: contrast, homogeneity, energy, correlation
     - Mask: chalky pixel fraction, internal texture stats
     """
-    from ml.colour import extract_grain_crop
+    from ml.quality.colour import extract_grain_crop
     
     crop_rgb, crop_mask = extract_grain_crop(grain_rgb, grain_mask)
     

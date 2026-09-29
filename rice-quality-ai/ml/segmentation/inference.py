@@ -26,8 +26,8 @@ from ml.config import (
     get_model_info,
     get_threshold,
 )
-from ml.postprocessing import PostProcessor
-from ml.segmentation import segment_grains, SegmentationResult, GrainInstance
+from ml.segmentation.postprocessing import PostProcessor
+from ml.segmentation.segmentation import segment_grains, SegmentationResult, GrainInstance
 
 PROJECT_ROOT = get_project_root()
 

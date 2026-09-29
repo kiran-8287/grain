@@ -23,9 +23,9 @@ import numpy as np
 import pytest
 
 from ml.config import get_threshold
-from ml.foreign_matter import _detect_foreign_heuristic
-from ml.pipeline import RiceQualityPipeline
-from ml.rice_gate import load_project_class_mappings
+from ml.quality.foreign_matter import _detect_foreign_heuristic
+from ml.segmentation.pipeline import RiceQualityPipeline
+from ml.segmentation.rice_gate import load_project_class_mappings
 
 
 @pytest.fixture
@@ -210,7 +210,7 @@ def test_case1_explicit_gate_status_stops_pipeline_before_segmentation(pipeline)
 
 def test_learned_gate_is_primary_when_model_is_available(monkeypatch):
     """When a trained rice gate model is present, it should be the primary rice/no-rice signal."""
-    from ml import rice_gate as rice_gate_module
+    from ml.segmentation import rice_gate as rice_gate_module
 
     class DummyGateModel:
         def predict(self, crop):

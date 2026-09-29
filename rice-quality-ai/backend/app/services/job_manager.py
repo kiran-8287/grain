@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
-from ml.pipeline import RiceQualityPipeline
+from ml.segmentation.pipeline import RiceQualityPipeline
 
 from backend.app.services.run_logger import log_run
 

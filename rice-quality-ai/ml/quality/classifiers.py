@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 from ml.config import get_model_info, get_project_root, get_threshold
-from ml.preprocessing import masked_grain_square_crop, pad_to_square
+from ml.segmentation.preprocessing import masked_grain_square_crop, pad_to_square
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ def _classify_damaged_heuristic(
     Uses colour variance, dark spot ratio, and texture irregularity.
     Clearly labelled as heuristic.
     """
-    from ml.colour import extract_grain_crop
+    from ml.quality.colour import extract_grain_crop
     crop_rgb, crop_mask = extract_grain_crop(grain_rgb, grain_mask)
     
     if crop_mask.sum() == 0:
@@ -437,7 +437,7 @@ def _classify_sprouted_heuristic(
     Heuristic fallback for sprouted/weevilled detection.
     Uses texture irregularity and hole/cavity detection.
     """
-    from ml.colour import extract_grain_crop
+    from ml.quality.colour import extract_grain_crop
     crop_rgb, crop_mask = extract_grain_crop(grain_rgb, grain_mask)
     
     if crop_mask.sum() == 0:

@@ -30,16 +30,16 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from ml.admixture import detect_admixture
-from ml.calibration import detect_calibration
-from ml.classifiers import (
+from ml.quality.admixture import detect_admixture
+from ml.quality.calibration import detect_calibration
+from ml.quality.classifiers import (
     batch_classify_damaged,
     batch_classify_sprouted_weevilled,
     classify_damaged,
     classify_immature_shrunken,
     classify_sprouted_weevilled,
 )
-from ml.colour import (
+from ml.quality.colour import (
     analyze_dehusked,
     analyze_discoloured,
     analyze_red,
@@ -52,37 +52,37 @@ from ml.config import (
     get_threshold,
     load_standards,
 )
-from ml.foreign_matter import detect_foreign_matter, merge_gate_foreign_objects
-from ml.geometry import (
+from ml.quality.foreign_matter import detect_foreign_matter, merge_gate_foreign_objects
+from ml.quality.geometry import (
     classify_broken,
     compute_grain_geometry,
     compute_robust_whole_kernel_length,
 )
-from ml.inference import analyze_image as phase1_analyze_image
-from ml.postprocessing import (
+from ml.segmentation.inference import analyze_image as phase1_analyze_image
+from ml.segmentation.postprocessing import (
     PostProcessor,
     confidence_to_color,
     render_phase1_overlay,
 )
-from ml.preprocessing import (
+from ml.segmentation.preprocessing import (
     ImageValidationError,
     load_image,
     resize_for_inference,
 )
-from ml.quality import assess_image_quality
-from ml.rice_gate import (
+from ml.quality.quality import assess_image_quality
+from ml.segmentation.rice_gate import (
     MESSAGE_NO_ANALYSABLE_RICE,
     STATUS_NO_ANALYSABLE_RICE,
     STATUS_NO_RICE_CLASS,
     STATUS_NOT_RICE,
 )
-from ml.segmentation import (
+from ml.segmentation.segmentation import (
     GrainInstance,
     detect_rice_presence,
     segment_grains,
 )
-from ml.standards import compare_with_standards
-from ml.texture import (
+from ml.standards.standards import compare_with_standards
+from ml.quality.texture import (
     extract_chalky_features,
     heuristic_chalky_classification,
 )

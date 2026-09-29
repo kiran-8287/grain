@@ -765,6 +765,6 @@ def detect_rice_presence(image_rgb: np.ndarray) -> Dict:
     """
     # Imported lazily: ml.rice_gate re-uses extract_foreground_mask from this
     # module, so a module-level import would be circular.
-    from ml.rice_gate import evaluate_rice_presence
+    from ml.segmentation.rice_gate import evaluate_rice_presence
 
     return evaluate_rice_presence(image_rgb)
