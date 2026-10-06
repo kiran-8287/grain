@@ -1,0 +1,552 @@
+Good. **This audit gives us enough information to stop guessing and start proceeding systematically.** And there is one very important distinction we need to make before doing anything else:
+
+> The Week-1 system is **not a trained segmentation model**. It is a classical-CV pipeline with a rice gate + segmentation + foreign-matter logic + geometry + heuristic quality layers.
+
+That is actually useful. We now have a known working baseline to improve **without blindly replacing it with YOLO**.
+
+There are also two things in this audit I would **not accept as final yet**:
+
+1. `pytest` did **not actually run** because `httpx` is missing.
+2. The audit says only datasets 02 and 06 are physically populated in this reverted workspace. So we must not assume the other six datasets are currently available to train from.
+
+And importantly, the audit says the pipeline contains quality/standards code. That does **not** mean those components are validated. We need to separate:
+
+**implemented → active → working → validated**
+
+Those are four different things.
+
+---
+
+# Our new plan
+
+I want to structure this as a series of **hard gates**.
+
+```text
+                 CURRENT WEEK-1
+                      │
+                      ▼
+             ┌─────────────────┐
+             │  GATE 0         │
+             │ Reproduce exact │
+             │ baseline       │
+             └────────┬────────┘
+                      │
+                      ▼
+             ┌─────────────────┐
+             │  GATE 1         │
+             │ Rice detection  │
+             │ + foreign       │
+             │ matter          │
+             └────────┬────────┘
+                      │
+                      ▼
+             ┌─────────────────┐
+             │  GATE 2         │
+             │ Segmentation    │
+             │ quality         │
+             └────────┬────────┘
+                      │
+                      ▼
+             ┌─────────────────┐
+             │  GATE 3         │
+             │ Geometry        │
+             └────────┬────────┘
+                      │
+                      ▼
+                FREEZE CORE
+                      │
+                      ▼
+             Quality parameters
+                      │
+                      ▼
+              Sample-level
+                      │
+                      ▼
+                  Standards
+```
+
+We should **not move to Gate 2 until Gate 1 is measured**, and so on.
+
+---
+
+# STEP 0 — Reproduce the actual Week-1 baseline
+
+This is what I want you to do **right now**.
+
+Do NOT train YOLO.
+
+Do NOT modify segmentation.
+
+Do NOT delete the old quality modules.
+
+Do NOT touch the frontend.
+
+First make sure the reverted system actually reproduces the behavior you remember.
+
+Give Antigravity this:
+
+```text
+We have completed the Week-1 runtime audit.
+
+Now perform ONLY a BASELINE REPRODUCTION TASK.
+
+The purpose is to establish an objective, reproducible record of
+the current Week-1 system BEFORE we make any ML or segmentation
+changes.
+
+Do not redesign anything.
+
+Do not train anything.
+
+Do not replace classical CV with YOLO.
+
+Do not modify the segmentation algorithm.
+
+Do not modify the rice gate.
+
+Do not modify foreign-matter logic.
+
+Do not modify geometry.
+
+Do not modify the frontend.
+
+Do not delete any existing modules.
+
+============================================================
+1. FIX ONLY THE TEST ENVIRONMENT
+============================================================
+
+The previous audit reported:
+
+pytest collection fails because:
+
+ModuleNotFoundError: No module named 'httpx'
+
+Inspect the backend Python environment.
+
+If httpx is genuinely missing, install the minimum required
+test dependency.
+
+Do NOT change application source code just to make tests pass.
+
+If requirements.txt is missing a dependency that is required by
+the existing tests, report that separately.
+
+Do not perform unrelated package upgrades.
+
+============================================================
+2. RUN THE EXISTING TEST SUITE
+============================================================
+
+Run:
+
+pytest -q
+
+Report:
+
+- passed
+- failed
+- skipped
+- warnings
+
+If any tests fail, DO NOT immediately fix them.
+
+For every failure determine whether it is:
+
+A. environment/dependency issue
+B. genuine Week-1 regression
+C. obsolete test
+D. implementation bug
+
+Do not modify tests yet.
+
+============================================================
+3. RUN THE EXISTING 27 TEST IMAGES
+============================================================
+
+The directory is:
+
+27 tests/
+
+Run every image through the CURRENT Week-1 pipeline.
+
+Do not infer expected labels from filenames.
+
+For every image record:
+
+- filename
+- rice_detected
+- rice_gate decision
+- total detected grain count
+- foreign matter count
+- foreign matter classes, if available
+- grain confidence range
+- whether annotated output was generated
+- whether geometry was produced
+
+Do not change any thresholds.
+
+Do not manually correct any result.
+
+============================================================
+4. GROUP THE 27 TEST RESULTS
+============================================================
+
+Group images into categories based on what they actually contain,
+not their filenames:
+
+A. rice-only
+B. foreign-only
+C. rice + foreign matter
+D. visually unusual rice
+E. dense/many-grain scenes
+F. other/unclear
+
+For each category report:
+
+- number of images
+- observed behavior
+- obvious failures
+
+============================================================
+5. SEGMENTATION-SPECIFIC ANALYSIS
+============================================================
+
+For every image where rice is detected, inspect the returned
+grain masks.
+
+Do NOT train anything.
+
+Measure/report:
+
+- number of detected instances
+- whether masks are separate
+- obvious under-segmentation
+- obvious over-segmentation
+- obvious duplicate detections
+- obvious missed grains
+- obvious foreign objects incorrectly appearing as rice
+
+Use the existing annotated outputs.
+
+Do not call a result "perfect" unless there is actual ground truth.
+
+============================================================
+6. FOREIGN-MATTER ANALYSIS
+============================================================
+
+For images containing foreign objects, determine:
+
+- which objects were detected
+- which were classified as foreign
+- which were incorrectly counted as rice
+- whether rice grains were incorrectly rejected as foreign
+
+This is especially important.
+
+We want to preserve the successful Week-1 behavior before
+changing anything.
+
+============================================================
+7. GEOMETRY ANALYSIS
+============================================================
+
+For detected rice grains inspect:
+
+- length
+- breadth
+- L/B ratio
+- units
+- measurement quality
+
+Check for:
+
+- zero values
+- impossible values
+- obvious outliers
+- missing geometry
+
+Do not change geometry.
+
+============================================================
+8. PRODUCTION SAFETY CHECK
+============================================================
+
+Verify that:
+
+- current production config still points to the Week-1 pipeline
+- no experimental YOLO checkpoint is being used
+- no files under models/segmentation/experimental are loaded
+- no experimental model is activated by configuration
+
+Do not modify production.
+
+============================================================
+9. DATASET AVAILABILITY CHECK
+============================================================
+
+Do NOT train or prepare datasets.
+
+Simply verify the current physical availability of:
+
+datasets/
+    01_Mendeley_Rice_Variety
+    02_Grainalyze
+    03_Rice_Variety
+    04_RiceVigor
+    05_Ricee
+    06_Rice_Grain_Segmentation
+    07_Raw_Rice_Seed
+    08_Rice_Grain
+
+For each report:
+
+- whether images are actually present
+- approximate image count
+- whether annotations are present
+- annotation format
+
+Do not assume that historical audit reports mean the data is
+currently present.
+
+============================================================
+10. IMPORTANT DISTINCTION
+============================================================
+
+For every component, distinguish:
+
+IMPLEMENTED
+ACTIVE
+WORKING
+VALIDATED
+
+Do not use these words interchangeably.
+
+For example:
+
+A classifier existing in classifiers.py does NOT mean the
+classifier is validated.
+
+A foreign-matter heuristic working on demo images does NOT mean
+foreign matter detection is production robust.
+
+A segmentation algorithm returning masks does NOT mean the masks
+are accurate without ground truth.
+
+============================================================
+11. FINAL OUTPUT
+============================================================
+
+Return only the baseline reproduction report.
+
+Use this structure:
+
+A. TEST ENVIRONMENT
+
+B. PYTEST RESULTS
+
+C. 27-IMAGE RESULTS
+
+D. RICE GATE PERFORMANCE
+
+E. SEGMENTATION PERFORMANCE
+
+F. FOREIGN-MATTER PERFORMANCE
+
+G. GEOMETRY PERFORMANCE
+
+H. PRODUCTION SAFETY CHECK
+
+I. DATASET AVAILABILITY
+
+J. CURRENT KNOWN FAILURES
+
+K. COMPONENT STATUS
+
+For component status use:
+
+| Component | Implemented | Active | Working | Validated |
+|-----------|-------------|--------|---------|-----------|
+
+Do not make any code changes except the minimum environment
+dependency installation required to run the tests.
+
+DO NOT start Phase 2.
+
+STOP after this report.
+```
+
+---
+
+# Why this is the correct next step
+
+Because right now we have this:
+
+### What we KNOW
+
+The original Week-1 architecture contains:
+
+* rice gate
+* classical CV segmentation
+* foreign matter detection
+* geometry
+* quality modules
+* standards
+* API/frontend integration
+
+### What we DON'T YET KNOW
+
+We haven't yet established quantitatively, **in this reverted copy**, exactly how well each part behaves.
+
+And that's what matters.
+
+---
+
+# Then comes the most important decision
+
+Once you give me the result of that baseline reproduction, I want to answer this question:
+
+> **What exactly should we improve first?**
+
+There are three possible outcomes.
+
+### Outcome A — segmentation is already very good
+
+Then:
+
+```text
+Week-1 CV
+   ↓
+keep segmentation
+   ↓
+improve quality classifiers
+```
+
+No YOLO necessary.
+
+---
+
+### Outcome B — segmentation works on normal separated grains but has measurable weaknesses
+
+Then we improve **segmentation specifically**.
+
+For example:
+
+```text
+background
+    ↓
+foreground extraction
+    ↓
+contour detection
+    ↓
+candidate filtering
+    ↓
+mask refinement
+```
+
+We can potentially introduce ML only where classical CV is demonstrably insufficient.
+
+---
+
+### Outcome C — segmentation fundamentally cannot meet the requirement
+
+Only then do we investigate a learned segmentation model.
+
+And even then:
+
+```text
+dataset
+ ↓
+annotation quality
+ ↓
+domain diversity
+ ↓
+train/validation/test split
+ ↓
+training
+ ↓
+external evaluation
+ ↓
+failure analysis
+ ↓
+integration
+```
+
+Not:
+
+```text
+104 images
+ ↓
+YOLO
+ ↓
+99% mAP
+ ↓
+production
+```
+
+We already learned that lesson.
+
+---
+
+# One major change from our previous approach
+
+Previously we were treating:
+
+> **"Can YOLO segment these 104 images?"**
+
+as the central question.
+
+It isn't.
+
+The actual question is:
+
+> **"Can our system reliably identify each actual rice grain and produce an accurate individual mask on the kinds of images our professor expects?"**
+
+That's much bigger.
+
+For your professor's intended setup, we currently know the expected scene is approximately:
+
+```text
+sheet / tray
+       │
+       │
+  ○     ○       ○
+       ○   ○
+  ○          ○
+       ○
+```
+
+with **separated grains**, not necessarily the crazy dense/overlapping scenes we've been testing.
+
+So our eventual segmentation evaluation should specifically represent that intended operating environment.
+
+---
+
+# And I want one more rule from now on
+
+For every future model/component we build, we will maintain this:
+
+```text
+                 TRAINING
+                    ↓
+             INTERNAL TEST
+                    ↓
+           EXTERNAL TEST
+                    ↓
+          FAILURE ANALYSIS
+                    ↓
+        ┌───────────┴───────────┐
+        │                       │
+     READY                  NOT READY
+        │                       │
+        ▼                       ▼
+     FREEZE                 INVESTIGATE
+```
+
+**No model gets connected to the main pipeline merely because its training metrics look good.**
+
+That will prevent the YOLO situation from happening again.
+
+---
+
+So for now, **run that baseline reproduction prompt and stop there**. Once you send me its output, I'll help you decide whether we should first improve the existing Week-1 segmentation, improve the rice/foreign gate, or begin constructing a proper segmentation dataset.
