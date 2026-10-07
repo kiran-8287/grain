@@ -1,68 +1,680 @@
-# Grain Quality Analysis — Project Context
+==================================================
+GRAIN QUALITY ANALYZER — PROJECT CONTEXT
+==================================================
 
-## Purpose
-This document captures the current repository state, implementation scope, and validation status so AI coding agents and reviewers have a single authoritative reference.
+# 1. PROJECT PURPOSE
 
-## Recovery Status
-- Repository recovered from `https://github.com/kiran-8287/grain.git` after accidental deletion.
-- Current working tree matches the committed history; all expected baseline files are present.
+Grain Quality Analyzer is an image-based rice grain inspection application.
 
-## Verified Baseline
-- Backend tests pass: 34/34 tests green (unit and integration coverage).
-- Frontend builds successfully from `frontend/`.
-- Safe cleanup completed: removed unused assets, source `__pycache__/`, `.pytest_cache/`, and outdated lock files.
+The long-term objective is to:
 
-## Production Pipeline Status
-- Active pipeline: **classical CV segmentation + rule-based classifiers**.
-- Trained YOLO / Mask R-CNN model weights are **not committed** in this repository.
-- Model registry paths (`configs/models.json`) are **placeholders** and should not be treated as ready-to-run.
+- detect rice grains
+- segment individual rice grains
+- measure grain geometry
+- classify Whole vs Broken grains
+- detect additional rice defects
+- detect foreign matter
+- provide image-based quality statistics
+- eventually support standards/reference screening
+- provide a user-facing web dashboard
+- export analysis results
 
-## Rice-Presence Gate
-- Implemented: `ml/segmentation/rice_gate.py`.
-- Behavior: distinguishes “objects detected” from “rice detected”.
-- Verified by tests: foreign-matter-only images, empty/background-only images, single-grain images, and mixed scenes.
+However, development is intentionally incremental.
 
-## Whole vs Broken
-- Criterion: length ratio vs a reference whole-kernel length (default threshold 0.75).
-- Reference sources:
-  - Profile supplied by caller: classified as **Reliable**.
-  - Sample-derived candidate population: classified as **Proxy / Sample-Derived**.
-  - No reference available: classified as **Undetermined**.
-- Default `grain_profiles/default_rice.json` is **proxy/pixel-based** and only valid at the original capture distance; do not treat it as a universal physical reference.
+The CURRENT active development priority is:
 
-## Segmentation Behavior
-- Classical CV fallback is the active code path.
-- Merge handling: touching grains and unresolved clusters are detected and reported.
-- Uncertain or rejected instances are surfaced in per-grain tables and summary counts.
+1. Rice grain detection
+2. Accurate individual-grain segmentation/masking
+3. Grain geometry
+4. Whole vs Broken classification
 
-## Foreign Matter and Admixture
-- Foreign-matter detection uses heuristic methods in `ml/quality/foreign_matter.py`.
-- Admixture estimation is available; results are reported separately and are not merged into the rice count.
+Do NOT expand development into additional defect classifiers or standards work unless explicitly requested.
 
-## Image Quality
-- Quality tiering: GOOD / FAIR / POOR / UNRELIABLE.
-- Hard-failure rules can mark a run UNRELIABLE based on blur, grain area, segmentation confidence, uncertain-grain fraction, illumination uniformity, and clipped-pixel fraction.
-- Quality result is exposed in the API response under `quality`.
+==================================================
+# 2. CURRENT ARCHITECTURE
 
-## Calibration
-- Supported: ArUco marker calibration (configurable dictionary and marker size in `configs/thresholds.json`).
-- When no calibration is supplied, analysis runs in pixel units.
+Frontend:
+React + TypeScript + Vite + Tailwind
 
-## Frontend
-- Upload and camera capture flow present.
-- Per-grain table supports selection, unit display, and length/breadth/L-B-ratio columns.
-- Export controls: annotated image download, CSV export, JSON export, and reset flow.
+Backend:
+FastAPI + Python
 
-## API Contract (selected fields)
-- Response envelope: `success`, `job_id`, `rice_detected`, `sample`, `calibration`, `quality`, `grains`, `foreign_matter`, `summary`, `standards`, `warnings`, `processing_time_seconds`.
-- Summary fields used by the UI: `total_count`, `whole_count`, `broken_count`, `broken_percent`, `whole_reference_length`, `reference_source`, `measurement_unit`.
+Runtime flow:
 
-## Standards Screening
-- A standards/screening layer exists.
-- Results are labeled as `NOT ASSESSABLE`, `NOT DETERMINABLE`, or `WITHIN REFERENCE LIMIT` / `EXCEEDS REFERENCE LIMIT` where supported.
-- Do not assert official lot-grade compliance or KMS limits unless a verified authoritative source and matching measurement basis are explicitly available.
+User
+  ↓
+Upload image OR camera capture
+  ↓
+FastAPI API
+  ↓
+Job manager
+  ↓
+RiceQualityPipeline
+  ↓
+Rice / non-rice gate
+  ↓
+Individual grain segmentation
+  ↓
+Geometry measurement
+  ↓
+Whole vs Broken classification
+  ↓
+Sample summary
+  ↓
+Annotated image
+  ↓
+Frontend dashboard
+  ↓
+Save / export
 
-## Documentation Boundaries
-- Validated: classical CV pipeline, rice gate, logging/job lifecycle, whole-vs-broken rules, quality tiering, merge detection, calibration path, and current UI flows.
-- Experimental / Proxy / Not-Yet-Implemented: trained model inference, official mass-based grading, universal physical references, and committed model weights.
-- No architectural changes, backend rewrites, or frontend redesigns were performed during baseline verification.
+==================================================
+# 3. CURRENT PRODUCTION METHODS
+
+IMPORTANT:
+The CURRENT production pipeline is NOT YOLO.
+
+Rice gate:
+Classical computer vision / heuristic image analysis
+
+Segmentation:
+Classical computer vision segmentation
+
+Geometry:
+Contour/mask-based geometric image processing
+
+Whole vs Broken:
+Rule-based geometric classification
+
+YOLO:
+NOT CURRENT PRODUCTION
+
+Previous YOLO experiments/checkpoints were intentionally removed from the repository during cleanup.
+
+Do not restore or activate YOLO automatically.
+
+A future YOLO experiment must be treated as a NEW explicitly requested experiment and must not silently replace the current baseline.
+
+==================================================
+# 4. ACTIVE ML / COMPUTER VISION MODULES
+
+Current important runtime modules:
+
+ml/segmentation/
+    inference.py
+    pipeline.py
+    postprocessing.py
+    preprocessing.py
+    rice_gate.py
+    segmentation.py
+
+ml/quality/
+    geometry.py
+    calibration.py
+    profiles.py
+
+ml/config.py
+
+The current goal is to keep these modules stable while improving the segmentation and Whole/Broken capabilities carefully.
+
+==================================================
+# 5. RICE / NON-RICE GATE
+
+The rice gate is currently classical CV.
+
+Its responsibility is to answer:
+
+"Does this image contain rice-like grain material?"
+
+It should distinguish:
+
+- rice present
+- rice absent / non-rice scene
+
+The gate must not be confused with the grain segmentation stage.
+
+Foreign/non-rice material must not automatically become a rice grain.
+
+Preserve the current gate behavior unless a regression test or controlled experiment demonstrates that a change is necessary.
+
+==================================================
+# 6. RICE GRAIN SEGMENTATION
+
+The current production segmentation method is classical CV.
+
+The segmentation output represents individual detected grain instances.
+
+Each grain instance contains information such as:
+
+- grain ID
+- bounding box
+- centroid
+- mask polygon
+- geometry
+- classification information
+
+The core requirement is:
+
+ONE PHYSICAL RICE GRAIN
+        ↓
+ONE CORRESPONDING GRAIN INSTANCE / MASK
+
+Avoid:
+
+- false background objects
+- foreign objects interpreted as rice
+- one physical grain becoming multiple masks
+- multiple physical grains becoming one mask
+
+Important project assumption for the current controlled testing setup:
+
+Rice grains used in the intended test scenes are placed so that grains should NOT touch or overlap.
+
+Therefore, touching/overlapping separation is not currently the primary problem to solve.
+
+The priority is accurate detection and clean masking of separated grains.
+
+==================================================
+# 7. GEOMETRY
+
+Geometry is computed from the segmented grain mask.
+
+Current measurements include:
+
+- length
+- breadth
+- L/B ratio
+- area
+- perimeter
+- centroid
+- orientation
+- bounding box
+- solidity
+- related geometry quality information
+
+The system can represent measurements in pixels.
+
+Physical millimetre measurement requires calibration.
+
+Do not assume pixel measurements are physically universal across different camera distances.
+
+==================================================
+# 8. CALIBRATION
+
+Calibration support exists.
+
+The project supports calibration/reference handling including ArUco-based calibration.
+
+Without calibration:
+    measurements are generally reported in pixels.
+
+Important:
+
+Pixel size depends on imaging scale.
+
+A whole rice grain can occupy very different pixel lengths when the camera distance changes.
+
+Therefore:
+
+A fixed pixel reference MUST NOT be treated as a universal physical rice-grain size.
+
+==================================================
+# 9. WHOLE VS BROKEN
+
+Whole-vs-Broken analysis is implemented.
+
+Current mathematical rule:
+
+length_ratio =
+    effective_grain_length /
+    whole_kernel_reference_length
+
+Decision:
+
+if length_ratio < 0.75:
+    BROKEN
+
+else:
+    WHOLE
+
+The 0.75 threshold represents the project's image-based three-fourths length criterion.
+
+IMPORTANT:
+This is a count/image-based classification for the project.
+
+It must not be described as an official mass-based laboratory broken-percentage measurement.
+
+==================================================
+# 10. WHOLE-KERNEL REFERENCE HIERARCHY
+
+Reference resolution follows:
+
+Tier 1
+Explicit trusted profile
+
+        ↓ if unavailable
+
+Tier 2
+Sample-derived intact population
+
+        ↓ if unavailable
+
+Tier 3
+Undetermined
+
+Meaning:
+
+Tier 1:
+A caller explicitly supplies a reference profile.
+
+Tier 2:
+The system attempts to estimate a whole-kernel reference from an intact grain population inside the sample.
+
+Tier 3:
+If there is not enough evidence for a reliable reference, the system returns:
+
+reference_source = unavailable
+reference_status = undetermined
+
+and Whole/Broken classification may remain undetermined.
+
+==================================================
+# 11. DEFAULT RICE PROFILE
+
+Current file:
+
+grain_profiles/default_rice.json
+
+Current reference:
+
+whole_kernel_length = 154.1 pixels
+whole_kernel_breadth = 48.2 pixels
+reference_unit = pixels
+
+IMPORTANT:
+
+This is a PIXEL-SCALE PROXY.
+
+It is not a universal physical whole-rice reference.
+
+It is only appropriate for an imaging setup with compatible scale.
+
+Long-term robust solution:
+
+physical calibration + millimetre-based reference.
+
+Do not silently inject this profile as a universal default for arbitrary images.
+
+==================================================
+# 12. CURRENT BROKEN-GRAIN VALIDATION
+
+Controlled Whole/Broken validation images are stored in:
+
+test_images/3 broken_grain/
+
+Current test structure:
+
+images/
+    B01 — 1 whole grain.jpeg
+    B02 — 1 broken grain.jpeg
+    B03 — 5 whole grains.jpeg
+    B04 — 5 broken grains A.jpeg
+    B05 — 10 whole + 1 broken.jpeg
+    B06 — 2 broken grains.png
+    B07 — 10 whole + 2 broken.jpeg
+    B08 — 5 broken grains B.png
+    B09 — 10 whole + 5 broken.jpeg
+    B10 — 10 whole + 10 broken.jpeg
+    B11 — 25 whole + 5 broken.jpeg
+    B12 — 25 whole + 10 broken.jpeg
+    B13 — All broken grains.png
+
+Existing validation results are stored under:
+
+test_images/3 broken_grain/results/
+
+The controlled profile-based tests demonstrated that the Whole/Broken rule can correctly mark the intended clear broken samples as red and whole grains as green when the reference profile is appropriate to the imaging scale.
+
+==================================================
+# 13. IMPORTANT BROKEN-GRAIN FINDINGS
+
+Previous validation established several important facts:
+
+1. The mathematical Whole/Broken rule itself is deterministic.
+
+2. Red annotated grains correspond to BROKEN.
+
+3. Green annotated grains correspond to WHOLE.
+
+4. Some earlier broken-image test failures were caused by segmentation over-splitting rather than the classifier itself.
+
+5. Some generated "broken" test pieces were physically above the 0.75 threshold and were therefore not valid clear-broken examples.
+
+6. Different test images were captured at different scales.
+
+7. A pixel reference therefore cannot be universally reused across all camera distances.
+
+8. An image containing only broken grains may not contain enough information to derive a whole-kernel reference internally.
+
+9. With an explicit valid reference profile, an all-broken image can still be classified.
+
+==================================================
+# 14. CURRENT UI CAPABILITIES
+
+Current frontend supports the current analysis flow including:
+
+- image upload
+- camera capture
+- processing state
+- annotated result viewer
+- grain table
+- per-grain detail
+- Whole/Broken display
+- Whole count
+- Broken count
+- Whole percentage
+- Broken percentage
+- annotated image saving/downloading
+- CSV/JSON export
+- reset flow
+
+Whole and Broken grains are visually differentiated.
+
+The UI should make the distinction understandable to the user.
+
+==================================================
+# 15. LOGGING
+
+The project now maintains structured application logging.
+
+Primary logging components include:
+
+backend/app/services/run_logger.py
+backend/app/main.py
+backend/app/services/job_manager.py
+ml/segmentation/pipeline.py
+tests/test_logging.py
+
+Current logging design:
+
+- one logical lifecycle owner for analysis events
+- consistent job_id throughout an analysis
+- no duplicate lifecycle events
+- individually measured stage durations
+- total analysis duration
+- success/failure terminal events
+- structured logs
+- rotating file logging
+- stdout logging
+- logging propagation protected against duplicate output
+
+Typical event sequence:
+
+analysis_started
+image_decoded
+rice_gate_started
+rice_gate_completed
+segmentation_started
+segmentation_completed
+geometry_started
+geometry_completed
+broken_classification_started
+broken_classification_completed
+annotation_started
+annotation_completed
+analysis_completed
+
+Failure path:
+
+analysis_started
+...
+analysis_failed
+
+A failed analysis must not subsequently emit:
+analysis_completed status=success
+
+Log files are runtime artifacts.
+
+logs/
+and *.log
+must remain ignored by Git.
+
+Do not log:
+- uploaded image bytes
+- base64 image data
+- secrets
+- API keys
+- credentials
+
+==================================================
+# 16. TEST DATA ORGANIZATION
+
+Current test images are organized as:
+
+test_images/
+
+1 all types/
+    General rice / non-rice / defect scenarios
+
+2 rice and stones/
+    Rice + foreign-object scenarios
+
+3 broken_grain/
+    Whole/Broken controlled validation
+
+Test images are validation/demo assets.
+
+Do not assume they are training data.
+
+==================================================
+# 17. CURRENT TEST STATUS
+
+Current verified backend test status:
+
+42 passed
+1 deselected
+
+The deselected test was intentionally excluded during the logging validation task.
+
+Whole/Broken tests pass.
+
+Rice-gate tests pass.
+
+Logging tests pass.
+
+Frontend production build passes.
+
+When future changes are made, regression testing must include the relevant existing suites.
+
+Do not claim broader model accuracy based only on unit tests.
+
+==================================================
+# 18. FOREIGN MATTER STATUS
+
+Foreign-matter functionality exists in the codebase but is NOT the current development priority.
+
+Current immediate project priority remains:
+
+1. rice detection
+2. segmentation/masking
+3. geometry
+4. Whole/Broken
+
+Do not begin foreign-matter model development or replace the current pipeline unless explicitly requested.
+
+Foreign-matter predictions must be labeled according to their actual validation status.
+
+==================================================
+# 19. OTHER QUALITY PARAMETERS
+
+Long-term intended parameters include:
+
+1. Broken
+2. Damaged
+3. Discoloured
+4. Chalky
+5. Red
+6. Dehusked
+7. Immature/Shrunken
+8. Sprouted/Weevilled
+9. Foreign Matter
+10. Admixture
+11. Length
+12. Breadth
+13. L/B Ratio
+14. Total Count
+
+However:
+
+The existence of an implementation file does NOT mean that a parameter is scientifically validated.
+
+Use explicit status labels where appropriate:
+
+Validated
+Experimental
+Proxy
+Undetermined
+Not yet implemented
+
+==================================================
+# 20. STANDARDS
+
+Standards/reference-screening functionality exists in the project.
+
+Do NOT claim:
+
+- official lot compliance
+- official laboratory certification
+- official current-season grading
+- official mass-based compliance
+
+unless a verified authoritative source and equivalent measurement basis are explicitly available.
+
+Image-derived values must remain clearly distinguished from laboratory measurements.
+
+==================================================
+# 21. DEVELOPMENT PRINCIPLES
+
+Always:
+
+1. Read PROJECT_CONTEXT.md before significant changes.
+2. Inspect the actual code before changing it.
+3. Treat current runtime behavior as authoritative.
+4. Preserve working behavior unless evidence requires change.
+5. Identify the earliest failing stage before modifying downstream logic.
+6. Separate dataset problems from model problems.
+7. Separate segmentation problems from classification problems.
+8. Avoid speculative architecture changes.
+9. Avoid unnecessary rewrites.
+10. Make the smallest change necessary for the requested task.
+11. Validate changes against controlled images and regression tests.
+12. Never fabricate metrics or provenance.
+
+==================================================
+# 22. SCOPE CONTROL
+
+The current active task is:
+
+RICE GRAIN DETECTION + INDIVIDUAL GRAIN MASKING
+
+followed by:
+
+WHOLE VS BROKEN
+
+Do not automatically move to:
+
+- damaged classification
+- chalky classification
+- red/discoloured classification
+- advanced foreign-matter detection
+- standards grading
+- authentication
+- deployment redesign
+- model replacement
+
+unless explicitly instructed.
+
+==================================================
+# 23. MODEL POLICY
+
+No trained YOLO/Mask R-CNN model is currently part of the production repository.
+
+Previous experimental model work was removed intentionally.
+
+Do not infer that a missing model should be downloaded or recreated.
+
+Do not introduce model-based segmentation merely because it may appear more sophisticated.
+
+Any new model experiment must:
+
+- be explicitly approved
+- be isolated from production
+- have a clear dataset
+- have independent evaluation
+- have reproducible results
+- not silently replace the current baseline
+
+==================================================
+# 24. SOURCE-OF-TRUTH ORDER
+
+When documentation conflicts:
+
+1. Current source code
+2. Current configuration
+3. Current tests
+4. Current runtime behavior
+5. PROJECT_CONTEXT.md
+6. Older reports and historical documentation
+
+Older experimental reports do not override current implementation.
+
+==================================================
+# 25. CURRENT STATUS SUMMARY
+
+CURRENT PRODUCTION:
+
+Rice gate:
+    Classical CV
+
+Segmentation:
+    Classical CV
+
+Geometry:
+    Geometric image processing
+
+Whole/Broken:
+    Rule-based relative-length classification
+
+Reference:
+    Explicit profile / sample-derived / undetermined
+
+Calibration:
+    Supported
+
+UI:
+    Upload + camera + analysis + annotated visualization + Whole/Broken summary + per-grain details + save/export
+
+Logging:
+    Structured + job-aware + stage timing + rotating file logging
+
+YOLO:
+    Not production
+
+==================================================
+# 26. CURRENT NEXT STEP
+
+The immediate next development step is NOT to redesign the architecture.
+
+The immediate next step is to continue carefully improving the existing grain-analysis foundation.
+
+Priority:
+
+1. Verify rice-grain detection
+2. Verify one-mask-per-grain behavior
+3. Reduce false masks
+4. Verify mask boundaries
+5. Verify grain counts
+6. Verify geometry from masks
+7. Verify Whole/Broken against controlled reference/profile
+8. Expand validation only after the above is stable
+
+Every change should be experimentally validated before being considered part of the production baseline. 
