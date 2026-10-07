@@ -29,6 +29,11 @@ class GrainProfile:
     notes: Optional[str] = None
     data_status: str = "Proxy"
     production_eligible: bool = False
+    variety: Optional[str] = None
+    measurement_method: Optional[str] = None
+    measurement_date: Optional[str] = None
+    operator: Optional[str] = None
+    sample_identifier: Optional[str] = None
 
     def validate(self) -> Tuple_Validation:
         """Validate that the profile contains usable, non-corrupt measurements."""
@@ -36,7 +41,7 @@ class GrainProfile:
             return False, "Profile name is empty"
         if self.reference_unit not in ("pixels", "mm"):
             return False, f"Invalid reference unit '{self.reference_unit}', must be 'pixels' or 'mm'"
-        if self.whole_kernel_length <= 0:
+        if not self.whole_kernel_length or self.whole_kernel_length <= 0:
             return False, f"Invalid whole_kernel_length {self.whole_kernel_length}, must be > 0"
         if self.whole_kernel_breadth is not None and self.whole_kernel_breadth <= 0:
             return False, f"Invalid whole_kernel_breadth {self.whole_kernel_breadth}, must be > 0"
@@ -44,6 +49,12 @@ class GrainProfile:
             return False, f"Invalid whole_kernel_lb_ratio {self.whole_kernel_lb_ratio}, must be > 0"
         if self.data_status not in ("Measured", "Proxy", "Sample-Derived"):
             return False, f"Invalid data_status '{self.data_status}'"
+        if self.reference_unit == "mm" and self.data_status == "Measured" and self.production_eligible:
+            if self.reference_count < 3:
+                return False, (
+                    f"Production-eligible measured mm profile requires reference_count >= 3 "
+                    f"(got {self.reference_count})."
+                )
         return True, "Valid"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -83,6 +94,11 @@ def load_grain_profile(profile_path_or_name: Union[str, Path, Dict[str, Any]]) -
                 notes=profile_path_or_name.get("notes"),
                 data_status=str(profile_path_or_name.get("data_status", "Proxy")),
                 production_eligible=bool(profile_path_or_name.get("production_eligible", False)),
+                variety=profile_path_or_name.get("variety"),
+                measurement_method=profile_path_or_name.get("measurement_method"),
+                measurement_date=profile_path_or_name.get("measurement_date"),
+                operator=profile_path_or_name.get("operator"),
+                sample_identifier=profile_path_or_name.get("sample_identifier"),
             )
             is_valid, msg = profile.validate()
             if not is_valid:
@@ -136,6 +152,11 @@ def load_grain_profile(profile_path_or_name: Union[str, Path, Dict[str, Any]]) -
             notes=data.get("notes"),
             data_status=str(data.get("data_status", "Proxy")),
             production_eligible=bool(data.get("production_eligible", False)),
+            variety=data.get("variety"),
+            measurement_method=data.get("measurement_method"),
+            measurement_date=data.get("measurement_date"),
+            operator=data.get("operator"),
+            sample_identifier=data.get("sample_identifier"),
         )
         is_valid, msg = profile.validate()
         if not is_valid:

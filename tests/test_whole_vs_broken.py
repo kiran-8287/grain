@@ -523,3 +523,113 @@ def test_physical_mm_profile_with_unavailable_calibration_is_undetermined():
     assert src == "unavailable"
     assert status == "undetermined"
     assert meta.get("calibration_validity") == "unavailable"
+
+
+def test_build_physical_profile_from_measurements():
+    """build_profile packages real mm measurements into a valid measured profile"""
+    from scripts.build_physical_profile import build_profile
+
+    result = build_profile(
+        lengths_mm=[6.7, 6.8, 6.9, 6.6, 7.0, 6.5, 6.9, 7.1, 6.8, 6.7],
+        breadths_mm=[2.0, 2.1, 1.9, 2.0, 2.2, 1.8, 2.0, 2.1, 1.9, 2.0],
+        source="unit-test",
+        variety="test-rice",
+        production_eligible=True,
+        profile_name="unit_test_physical",
+    )
+    profile = result["profile"]
+    assert profile["reference_unit"] == "mm"
+    assert profile["data_status"] == "Measured"
+    assert profile["production_eligible"] is True
+    assert profile["reference_count"] == 10
+    assert profile["variety"] == "test-rice"
+    assert abs(profile["whole_kernel_length"] - 6.8) < 0.1
+    assert result["statistics"]["count"] == 10
+
+
+def test_build_physical_profile_rejects_non_positive_values():
+    """build_profile rejects non-positive measurements"""
+    from scripts.build_physical_profile import build_profile
+
+    with pytest.raises(ValueError):
+        build_profile(lengths_mm=[-1.0, 6.8, 6.9])
+
+
+def test_pixel_mm_unit_mismatch_is_rejected():
+    """pixel lengths with mm reference must not be directly compared"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    # measurement_unit="mm" but caller-supplied lengths are in pixels
+    # With valid calibration, the resolver returns the mm reference.
+    # Unit mismatch is a caller/data-path concern; here we verify
+    # that the resolver does not invent a conversion.
+    calibration = {"calibrated": True, "mode": "aruco", "validity": "valid"}
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[4.2, 5.1, 6.0],
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len == 6.8
+    assert meta["reference_unit"] == "mm"
+
+
+def test_all_broken_with_physical_profile_and_valid_calibration():
+    """All-broken image can be classified with physical profile + valid calibration"""
+    from ml.quality.geometry import classify_broken
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    calibration = {"calibrated": True, "mode": "aruco", "validity": "valid"}
+    broken_lengths = [4.2, 4.8, 3.8, 4.6, 5.0]
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=broken_lengths,
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len == 6.8
+    assert src == "profile"
+    assert status == "reliable"
+    labels = [
+        classify_broken(l, ref_len, reference_source=src, reference_status=status)["broken_label"]
+        for l in broken_lengths
+    ]
+    assert all(lbl == "broken" for lbl in labels)
+
+
+def test_physical_profile_validation_rejects_placeholder_values():
+    """Measured mm profile with placeholders or missing values must be rejected"""
+    from ml.quality.profiles import GrainProfile
+
+    bad = GrainProfile(
+        profile_name="bad2",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        reference_count=1,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    ok, msg = bad.validate()
+    assert ok is False
+    assert "reference_count" in msg

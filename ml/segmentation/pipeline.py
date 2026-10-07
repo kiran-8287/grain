@@ -460,7 +460,7 @@ class RiceQualityPipeline:
 
         # 3. Detect calibration
         calibration_res = detect_calibration(image_rgb, manual_scale=manual_scale)
-        pixels_per_mm = calibration_res.pixels_per_mm
+        pixels_per_mm = calibration_res.pixels_per_mm if calibration_res.validity == "valid" else None
 
         # 4. Grain Instance Segmentation — Phase 1 masking cascade
         #
@@ -644,7 +644,7 @@ class RiceQualityPipeline:
         # if they have a calibrated reference for their imaging setup.
         # Without a profile, the system falls back to sample-derived reference (Tier 2)
         # or marks the classification as undetermined (Tier 3).
-        measurement_unit = "mm" if calibration_res.calibrated else "pixels"
+        measurement_unit = "mm" if calibration_res.validity == "valid" else "pixels"
         active_profile = profile  # None is valid — triggers Tier 2 / Tier 3
 
         calibration_info = calibration_res.to_dict() if calibration_res else {}

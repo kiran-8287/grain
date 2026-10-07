@@ -217,6 +217,13 @@ Therefore:
 
 A fixed pixel reference MUST NOT be treated as a universal physical rice-grain size.
 
+Calibration validity states:
+    valid        - marker detected, geometry valid, scale finite/positive, within sanity bounds
+    invalid      - calibration claimed but markers invalid, scale non-finite/non-positive, or out of bounds
+    unavailable  - no calibration reference detected
+
+Physical mm profiles require calibration_validity == "valid" before metric comparison.
+
 ==================================================
 # 9. WHOLE VS BROKEN
 
@@ -249,14 +256,17 @@ It must not be described as an official mass-based laboratory broken-percentage 
 Reference resolution follows:
 
 Tier 1
-Explicit trusted profile
+Explicit physical measured profile (mm) + valid calibration
+    -> production eligible
 
-        ↓ if unavailable
+Tier 1b
+Explicit legacy pixel profile
+    -> Proxy / demo-only / not production eligible
+    -> never automatically injected
 
 Tier 2
 Sample-derived intact population
-
-        ↓ if unavailable
+    -> Sample-Derived / proxy / not production eligible
 
 Tier 3
 Undetermined
@@ -264,7 +274,10 @@ Undetermined
 Meaning:
 
 Tier 1:
-A caller explicitly supplies a reference profile.
+A caller explicitly supplies a physical measured profile with valid calibration.
+
+Tier 1b:
+A caller explicitly supplies the legacy pixel profile (154.1 px). This is a scale-specific proxy.
 
 Tier 2:
 The system attempts to estimate a whole-kernel reference from an intact grain population inside the sample.
@@ -276,6 +289,12 @@ reference_source = unavailable
 reference_status = undetermined
 
 and Whole/Broken classification may remain undetermined.
+
+Physical mm profile requirements:
+    reference_unit == "mm"
+    data_status indicates measured/reference-qualified profile
+    calibration_validity == "valid"
+    reference_count >= 3 for production-eligible profiles
 
 ==================================================
 # 11. DEFAULT RICE PROFILE
@@ -655,13 +674,15 @@ UI:
 
 Logging:
     Structured + job-aware + stage timing + rotating file logging
+    Supports both pure JSONL and Python logging-prefixed JSON
 
 Monitoring:
     Streamlit read-only dashboard
-    Persistent structured JSON Lines logs
+    Persistent structured JSON Lines logs (plain JSONL or logging-prefixed)
     API metrics + analysis stage metrics
     Errors/failures + memory monitoring
-    Dashboard: streamlit run monitoring/app.py
+    Dashboard: C:\\Python314\\python.exe -m streamlit run monitoring/app.py
+    Parser handles real production log format with Python logger prefix
 
 YOLO:
     Not production

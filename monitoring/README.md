@@ -134,34 +134,52 @@ Newest first, limited to last 500 matching events for performance.
 
 ## Log Format
 
-Structured JSON Lines. Each line is a JSON object.
+Structured JSON Lines. Each line is a JSON object, optionally prefixed by the
+Python standard logger format.
 
-Minimum fields for request records:
-- timestamp
-- event (request_started / request_finished / request_failed)
-- request_id
-- method
-- path / route
-- status_code
-- ok
-- duration_ms
-- error_type / error_message (on failure)
+### Supported formats
 
-Minimum fields for analysis records:
-- timestamp
-- event (analysis_started / analysis_completed / analysis_failed)
-- job_id
-- request_id (linked)
-- status
-- total_processing_ms
-- failed_stage / error_type / error_message (on failure)
+**FORMAT A — pure JSONL:**
+```json
+{"timestamp":"...","event":"request_started",...}
+```
 
-Stage timing records:
-- stage-specific fields (duration_ms, grain_count, etc.)
+**FORMAT B — Python logging prefix + JSON:**
+```
+2026-10-08 03:07:48,214 [INFO] grain_structured: {"timestamp":"...","event":"request_started",...}
+```
 
-System records (when available):
-- process_id
-- rss_mb
+The parser extracts the JSON starting from the first `{` on the line. This
+allows it to handle both the clean JSONL test fixtures and the real production
+log lines emitted by Python's `logging` module.
+
+### Minimum fields for request records
+- `timestamp`
+- `event` (`request_started` / `request_finished` / `request_failed`)
+- `request_id`
+- `method`
+- `path` / `route`
+- `status_code`
+- `ok`
+- `duration_ms`
+- `error_type` / `error_message` (on failure)
+
+### Minimum fields for analysis records
+- `timestamp`
+- `event` (`analysis_started` / `analysis_completed` / `analysis_failed`)
+- `job_id`
+- `request_id` (linked when available; optional for analysis records)
+- `status`
+- `total_processing_ms`
+- `failed_stage` / `error_type` / `error_message` (on failure)
+
+### Stage timing records
+- `duration_ms`
+- Stage-specific fields (`grain_count`, `rice_detected`, etc.)
+
+### System records (when available)
+- `process_id`
+- `rss_mb`
 
 ## Request vs Analysis Duration
 

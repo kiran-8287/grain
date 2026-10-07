@@ -58,3 +58,7 @@ The system **does not reject images with less than 12 megapixels**.
 - **Calibration validity states**: `valid`, `invalid`, or `unavailable`. A physical profile is usable only when validity is `valid`. Invalid/unavailable calibration yields `NOT_DETERMINABLE` with a clear reason.
 - **Broken percentage**: Reported **by grain count**, not by mass. Regulatory specifications may use mass-based measurements; the image-based count should not be presented as mass-based regulatory compliance.
 - **No fabrication**: No physical $mm$ reference values are invented. If a verified physical measurement is needed, it should be established from multiple whole kernels (e.g., 10 whole kernels x 3 sets = 30 measurements averaged) and recorded as a measured profile.
+- **Physical profile builder**: `scripts/build_physical_profile.py` packages real user-supplied measurements into a measured mm profile. It does not invent values.
+- **Metric measurement path**: When calibration validity is `valid`, geometry is computed in both pixels and mm (`length_mm`, `breadth_mm`, `effective_length_mm`). The pipeline reports both where available.
+- **Unit safety**: Pixel and mm measurements are never mixed in the same ratio. Invalid unit comparisons fail safely with `NOT_DETERMINABLE`.
+- **Homography status**: A homography is computed when >= 4 ArUco markers are detected, but it is not yet connected to metric grain measurement. Current metric measurement uses `pixels_per_mm` scaling.

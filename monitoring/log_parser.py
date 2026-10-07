@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOG_DIR = PROJECT_ROOT / "logs"
 DEFAULT_LOG_FILE = DEFAULT_LOG_DIR / "app.log"
 MAX_PARSE_ERRORS = 50
@@ -121,6 +121,8 @@ class AnalysisRecord:
     error_message: str = ""
     reference_source: str = ""
     total_processing_ms: Optional[int] = None
+    filename: str = ""
+    segmentation_method: str = ""
 
 
 @dataclass
@@ -135,19 +137,32 @@ class ParseResult:
     records: List[LogRecord] = field(default_factory=list)
     parse_errors: int = 0
     malformed_lines: int = 0
+    files_read: int = 0
+    lines_read: int = 0
+    records_loaded: int = 0
 
 
 def _parse_line(line: str) -> LogRecord:
     line = line.strip()
     if not line:
         return LogRecord(raw={}, parse_error=True, parse_error_msg="empty line")
+    data = _extract_json(line)
+    if data is None:
+        return LogRecord(raw={}, parse_error=True, parse_error_msg="no JSON object found")
+    if not isinstance(data, dict):
+        return LogRecord(raw={}, parse_error=True, parse_error_msg="not a JSON object")
+    return LogRecord(raw=data)
+
+
+def _extract_json(line: str) -> Any:
+    first = line.find("{")
+    if first == -1:
+        return None
+    candidate = line[first:]
     try:
-        data = json.loads(line)
-        if not isinstance(data, dict):
-            return LogRecord(raw={}, parse_error=True, parse_error_msg="not a JSON object")
-        return LogRecord(raw=data)
-    except json.JSONDecodeError as exc:
-        return LogRecord(raw={}, parse_error=True, parse_error_msg=str(exc))
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
 
 
 def _iter_log_files(log_dir: Path) -> List[Tuple[Path, int]]:
@@ -171,6 +186,7 @@ def parse_file(path: Path, max_lines: int = DEFAULT_MAX_LINES) -> ParseResult:
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
+                result.lines_read += 1
                 if len(all_lines) >= max_lines:
                     break
                 rec = _parse_line(line)
@@ -179,6 +195,7 @@ def parse_file(path: Path, max_lines: int = DEFAULT_MAX_LINES) -> ParseResult:
                     if result.parse_errors < MAX_PARSE_ERRORS:
                         result.parse_errors += 1
                     continue
+                result.records_loaded += 1
                 ts = rec.timestamp
                 if ts is None:
                     ts = datetime.min.replace(tzinfo=timezone.utc)
@@ -187,6 +204,7 @@ def parse_file(path: Path, max_lines: int = DEFAULT_MAX_LINES) -> ParseResult:
         return result
     all_lines.sort(key=lambda x: x[0])
     result.records = [rec for _, rec in all_lines]
+    result.files_read = 1
     return result
 
 
@@ -202,9 +220,11 @@ def parse_logs(
     all_lines: List[Tuple[datetime, LogRecord]] = []
 
     for log_path, _ in log_files:
+        result.files_read += 1
         try:
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
+                    result.lines_read += 1
                     if len(all_lines) >= max_lines:
                         break
                     rec = _parse_line(line)
@@ -213,6 +233,7 @@ def parse_logs(
                         if result.parse_errors < MAX_PARSE_ERRORS:
                             result.parse_errors += 1
                         continue
+                    result.records_loaded += 1
                     ts = rec.timestamp
                     if ts is None:
                         ts = datetime.min.replace(tzinfo=timezone.utc)
@@ -337,6 +358,7 @@ def reconstruct_analyses(records: List[LogRecord]) -> List[AnalysisRecord]:
             job_id=jid,
             request_id=start_raw.get("request_id", ""),
             started_at=start_ts,
+            filename=start_raw.get("filename", ""),
         )
         if "analysis_completed" in evts:
             end_raw = evts["analysis_completed"]
@@ -350,6 +372,7 @@ def reconstruct_analyses(records: List[LogRecord]) -> List[AnalysisRecord]:
             record.undetermined_count = end_raw.get("undetermined_count", 0)
             record.total_processing_ms = end_raw.get("total_processing_ms")
             record.reference_source = end_raw.get("reference_source", "")
+            record.segmentation_method = end_raw.get("segmentation_method", "")
         elif "analysis_failed" in evts:
             end_raw = evts["analysis_failed"]
             record.completed_at = _timestamp_from_record(end_raw)
