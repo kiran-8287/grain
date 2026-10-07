@@ -1015,7 +1015,7 @@ class RiceQualityPipeline:
             img_rgb=image_rgb,
             grains=phase1_grains_for_render,
             foreign_matter=fm_for_render,
-            include_legend=True,
+            include_legend=False,
             legend_method_label=legend_label,
         )
         annotated_b64 = self._encode_rgb_to_jpeg_b64(image_rgb=overlay_rgb)

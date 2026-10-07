@@ -13,7 +13,9 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
   const totalGrains = summary.total_count ?? summary.total_rice_grains ?? 0;
   const brokenGrains = summary.broken_count ?? 0;
   const wholeGrains = summary.whole_count ?? Math.max(0, totalGrains - brokenGrains);
+  const undeterminedGrains = summary.undetermined_count ?? 0;
   const brokenPct = summary.broken_percent != null ? `${summary.broken_percent.toFixed(2)}%` : 'N/A';
+  const wholePct = summary.whole_percent != null ? `${summary.whole_percent.toFixed(2)}%` : 'N/A';
 
   const referenceSourceBadge = () => {
     const src = summary.reference_source;
@@ -57,7 +59,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
       </div>
 
       {/* Primary Whole vs Broken Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* Total Count */}
         <div className="bg-surface border border-border rounded-xl p-3.5 shadow-sm">
           <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block">Total Grains</span>
@@ -78,7 +80,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
             <span className="text-xs text-emerald-700 font-medium">≥ 75% length</span>
           </div>
           <span className="text-[10px] text-emerald-700 mt-1 block">
-            {summary.whole_percent != null ? `${summary.whole_percent.toFixed(1)}% of sample` : 'Intact kernels'}
+            {wholePct !== 'N/A' ? `${wholePct} of sample` : 'Intact kernels'}
           </span>
         </div>
 
@@ -90,18 +92,29 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
             <span className="text-xs text-rose-700 font-medium">&lt; 75% length</span>
           </div>
           <span className="text-[10px] text-rose-700 mt-1 block">
-            {summary.undetermined_count ? `${summary.undetermined_count} undetermined` : 'Pieces & fragments'}
+            {undeterminedGrains > 0 ? `${undeterminedGrains} undetermined` : 'Pieces & fragments'}
+          </span>
+        </div>
+
+        {/* Whole Percentage */}
+        <div className="bg-surface border border-emerald-200 bg-emerald-50/30 rounded-xl p-3.5 shadow-sm">
+          <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">Whole %</span>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-3xl font-black text-emerald-600">{wholePct}</span>
+          </div>
+          <span className="text-[10px] text-emerald-700 mt-1 block">
+            {wholeGrains > 0 ? 'Intact kernels' : 'No whole grains'}
           </span>
         </div>
 
         {/* Broken Percentage */}
-        <div className="bg-surface border border-border rounded-xl p-3.5 shadow-sm">
-          <span className="text-[11px] font-bold text-text-muted uppercase tracking-wider block">Broken %</span>
+        <div className="bg-surface border border-rose-200 bg-rose-50/30 rounded-xl p-3.5 shadow-sm">
+          <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider block">Broken %</span>
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="text-3xl font-black text-rose-600">{brokenPct}</span>
           </div>
-          <span className="text-[10px] text-text-muted mt-1 block">
-            Image count basis (demo metric)
+          <span className="text-[10px] text-rose-700 mt-1 block">
+            {brokenGrains > 0 ? 'Fragments & pieces' : 'No broken grains'}
           </span>
         </div>
       </div>

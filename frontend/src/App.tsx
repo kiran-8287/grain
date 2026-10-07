@@ -263,7 +263,11 @@ export const App: React.FC = () => {
                 />
 
                 {/* 5. Export Controls */}
-                <ExportControls jobId={result.job_id} onReset={handleReset} />
+                <ExportControls
+                  jobId={result.job_id}
+                  onReset={handleReset}
+                  annotatedImageAvailable={!!result.annotated_image_base64}
+                />
               </div>
              )}
       </main>
