@@ -27,6 +27,8 @@ class GrainProfile:
     source: str = "configured_profile"
     reference_count: int = 1
     notes: Optional[str] = None
+    data_status: str = "Proxy"
+    production_eligible: bool = False
 
     def validate(self) -> Tuple_Validation:
         """Validate that the profile contains usable, non-corrupt measurements."""
@@ -40,6 +42,8 @@ class GrainProfile:
             return False, f"Invalid whole_kernel_breadth {self.whole_kernel_breadth}, must be > 0"
         if self.whole_kernel_lb_ratio is not None and self.whole_kernel_lb_ratio <= 0:
             return False, f"Invalid whole_kernel_lb_ratio {self.whole_kernel_lb_ratio}, must be > 0"
+        if self.data_status not in ("Measured", "Proxy", "Sample-Derived"):
+            return False, f"Invalid data_status '{self.data_status}'"
         return True, "Valid"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,6 +81,8 @@ def load_grain_profile(profile_path_or_name: Union[str, Path, Dict[str, Any]]) -
                 source=str(profile_path_or_name.get("source", "dict_input")),
                 reference_count=int(profile_path_or_name.get("reference_count", 1)),
                 notes=profile_path_or_name.get("notes"),
+                data_status=str(profile_path_or_name.get("data_status", "Proxy")),
+                production_eligible=bool(profile_path_or_name.get("production_eligible", False)),
             )
             is_valid, msg = profile.validate()
             if not is_valid:
@@ -128,6 +134,8 @@ def load_grain_profile(profile_path_or_name: Union[str, Path, Dict[str, Any]]) -
             source=str(data.get("source", f"file:{target_file.name}")),
             reference_count=int(data.get("reference_count", 1)),
             notes=data.get("notes"),
+            data_status=str(data.get("data_status", "Proxy")),
+            production_eligible=bool(data.get("production_eligible", False)),
         )
         is_valid, msg = profile.validate()
         if not is_valid:

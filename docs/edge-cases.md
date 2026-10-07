@@ -22,10 +22,10 @@ This document details how the rice quality analysis system handles complex real-
 The system **does not reject images with less than 12 megapixels**.
 - Total image resolution is uncoupled from grain resolution. A 2 MP macro close-up of 5 grains provides hundreds of pixels across each grain, whereas a 12 MP camera from 2 meters away may yield grains occupying only 10 pixels.
 - Quality is evaluated **after segmentation** via:
-  1. Median grain pixel area
-  2. Bounding box width/height
-  3. Mask-scoped Laplacian blur variance (engineering threshold; calibration against human review is still required)
-  4. Illumination uniformity
+   1. Median grain pixel area
+   2. Bounding box width/height
+   3. Mask-scoped Laplacian blur variance (engineering threshold; calibration against human review is still required)
+   4. Illumination uniformity
 
 ---
 
@@ -45,3 +45,16 @@ The system **does not reject images with less than 12 megapixels**.
 ## 5. Calibration vs No Calibration
 - **Mode A (Calibrated)**: ArUco marker detection or manual scale factor provided. Converts length, breadth, and area to metric millimeters ($mm$).
 - **Mode B (Uncalibrated)**: No reference marker detected. Measurements reported strictly in pixels ($px$). L/B ratio is reported normally since it is dimensionless. The UI clearly displays: *"Metric calibration unavailable — measurements shown in pixels."*
+
+---
+
+## 6. Whole/Broken Reference and Measurement Semantics
+
+- **Project binary threshold**: Length ratio $< 0.75$ against the whole-kernel reference is classified as broken; ratio $\ge 0.75$ is classified as NOT broken / WHOLE. The $0.75$ threshold is a project rule, not a formal standards category boundary.
+- **Physical measured profile (preferred production route)**: Unit = $mm$, source = measured, `production_eligible = true`. Requires `calibration_validity == "valid"` before any metric comparison. Never compare $mm$ reference against $px$ measurements without conversion.
+- **Same-image sample-derived reference**: Heuristic/proxy derived from intact-looking candidates in the same image using upper-population clustering. Does **not** use `mean(all grains)` or `max(all grains)` because broken grains can bias either estimate. Returns `data_status = "Sample-Derived"` and `production_eligible = false`.
+- **Legacy pixel profile**: Demo-only proxy, unit = $px$, `data_status = "Proxy"`, `production_eligible = false`. Never automatically injected. Only used when explicitly requested.
+- **All-broken / no-reference cases**: When no valid reference exists (all broken, no profile, no calibration), the result is `undetermined` with a clear explanation. The system does **not** fabricate a whole-kernel estimate from broken pieces.
+- **Calibration validity states**: `valid`, `invalid`, or `unavailable`. A physical profile is usable only when validity is `valid`. Invalid/unavailable calibration yields `NOT_DETERMINABLE` with a clear reason.
+- **Broken percentage**: Reported **by grain count**, not by mass. Regulatory specifications may use mass-based measurements; the image-based count should not be presented as mass-based regulatory compliance.
+- **No fabrication**: No physical $mm$ reference values are invented. If a verified physical measurement is needed, it should be established from multiple whole kernels (e.g., 10 whole kernels x 3 sets = 30 measurements averaged) and recorded as a measured profile.

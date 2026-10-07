@@ -55,7 +55,9 @@ def test_case_a_single_whole_with_trusted_profile(trusted_profile):
     )
     assert ref_len == 100.0
     assert src == "profile"
-    assert status == "reliable"
+    assert status == "limited"
+    assert meta.get("reference_data_status") == "Proxy"
+    assert meta.get("production_eligible") is False
 
     result = classify_broken(
         length=measured_len,
@@ -313,3 +315,211 @@ def test_case_m_summary_metrics_in_pipeline(trusted_profile):
     assert summary["whole_count"] == 10
     assert summary["broken_count"] == 2
     assert summary["broken_percent"] == 16.67
+
+
+def test_boundary_ratio_075_is_whole():
+    """Boundary test: ratio exactly 0.75 -> WHOLE"""
+    ref_len = 100.0
+    for ratio, expected in [(0.749999, "broken"), (0.75, "whole"), (0.750001, "whole")]:
+        length = ratio * ref_len
+        result = classify_broken(
+            length=length,
+            whole_kernel_length=ref_len,
+            reference_source="profile",
+            reference_status="reliable",
+        )
+        assert result["broken_label"] == expected, f"ratio={ratio} expected={expected} got={result['broken_label']}"
+        assert result["length_ratio"] == round(ratio, 4)
+
+
+def test_physical_mm_profile_without_calibration_is_undetermined():
+    """Physical mm profile without calibration must be undetermined"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[4.2, 5.1, 6.0],
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=None,
+    )
+    assert ref_len is None
+    assert src == "unavailable"
+    assert status == "undetermined"
+    assert "Physical profile supplied but calibration is not valid" in meta.get("reason", "")
+
+
+def test_physical_mm_profile_with_calibration_is_classified():
+    """Physical mm profile with valid calibration must classify correctly"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    calibration = {"calibrated": True, "mode": "aruco", "validity": "valid"}
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[4.2, 5.1, 6.0],
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len == 6.8
+    assert src == "profile"
+    assert status == "reliable"
+    assert meta.get("reference_data_status") == "Measured"
+    assert meta.get("production_eligible") is True
+    assert meta.get("calibration_validity") == "valid"
+
+
+def test_legacy_pixel_profile_is_never_automatic():
+    """Pixel profile must be explicitly requested — not auto-injected"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    broken_lens = [50.0, 55.0, 52.0, 48.0, 53.0]
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=broken_lens,
+        profile=None,
+    )
+    assert ref_len is None
+    assert src == "unavailable"
+    assert status == "undetermined"
+
+
+def test_pixel_profile_never_reliable_status():
+    """Pixel-only profile must not return 'reliable' status"""
+    pixel_profile = GrainProfile(
+        profile_name="legacy_px",
+        reference_unit="pixels",
+        whole_kernel_length=150.0,
+        source="legacy",
+        reference_count=1,
+        data_status="Proxy",
+        production_eligible=False,
+    )
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[140.0, 155.0, 160.0],
+        profile=pixel_profile,
+    )
+    assert ref_len == 150.0
+    assert src == "profile"
+    assert status == "limited"
+    assert meta.get("reference_data_status") == "Proxy"
+    assert meta.get("production_eligible") is False
+
+
+def test_scale_invariance_with_physical_profile():
+    """
+    Same physical grain at different zoom levels + calibration
+    must produce the same Whole/Broken classification.
+    """
+    from ml.quality.geometry import classify_broken
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+
+    calibration = {"calibrated": True, "mode": "aruco", "validity": "valid"}
+
+    lengths_mm = [4.2, 4.8, 5.0, 6.8]
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=lengths_mm,
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len == 6.8
+    labels = [
+        classify_broken(l, ref_len, reference_source=src, reference_status=status)["broken_label"]
+        for l in lengths_mm
+    ]
+    assert labels == ["broken", "broken", "broken", "whole"]
+
+
+def test_physical_mm_profile_with_invalid_calibration_is_undetermined():
+    """Physical mm profile with invalid calibration must be undetermined"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    calibration = {
+        "calibrated": True,
+        "mode": "aruco",
+        "validity": "invalid",
+        "validity_reason": "Scale outside sanity bounds.",
+    }
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[4.2, 5.1, 6.0],
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len is None
+    assert src == "unavailable"
+    assert status == "undetermined"
+    assert meta.get("calibration_validity") == "invalid"
+
+
+def test_physical_mm_profile_with_unavailable_calibration_is_undetermined():
+    """Physical mm profile with unavailable calibration must be undetermined"""
+    from ml.quality.geometry import resolve_whole_kernel_reference
+
+    mm_profile = GrainProfile(
+        profile_name="measured_mm",
+        reference_unit="mm",
+        whole_kernel_length=6.8,
+        whole_kernel_breadth=2.0,
+        whole_kernel_lb_ratio=3.4,
+        source="measured",
+        reference_count=30,
+        data_status="Measured",
+        production_eligible=True,
+    )
+    calibration = {
+        "calibrated": False,
+        "mode": "none",
+        "validity": "unavailable",
+        "validity_reason": "No calibration reference detected in this image.",
+    }
+    ref_len, src, status, meta = resolve_whole_kernel_reference(
+        lengths=[4.2, 5.1, 6.0],
+        profile=mm_profile,
+        measurement_unit="mm",
+        calibration=calibration,
+    )
+    assert ref_len is None
+    assert src == "unavailable"
+    assert status == "undetermined"
+    assert meta.get("calibration_validity") == "unavailable"

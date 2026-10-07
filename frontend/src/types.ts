@@ -103,7 +103,14 @@ export interface SampleSummary {
   whole_reference_length?: number | null;
   reference_source?: string;
   reference_status?: string;
+  reference_data_status?: string;
   reference_profile_name?: string;
+  reference_unit?: string;
+  reference_production_eligible?: boolean;
+  reference_calibration_required?: boolean;
+  reference_calibration_status?: string;
+  reference_count?: number | null;
+  reference_explanation?: string | null;
   uncertain_grains: number;
   rejected_grains: number;
   foreign_matter_count: number;

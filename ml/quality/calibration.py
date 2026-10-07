@@ -19,6 +19,38 @@ from ml.config import get_threshold
 
 logger = logging.getLogger(__name__)
 
+_CALIBRATION_PPMM_MIN = float(get_threshold("calibration", "ppmm_min", 0.1))
+_CALIBRATION_PPMM_MAX = float(get_threshold("calibration", "ppmm_max", 500.0))
+
+
+def _validate_calibration(
+    pixels_per_mm: Optional[float],
+    marker_count: int,
+    mode: str,
+) -> Tuple[str, str]:
+    """
+    Validate calibration result against sanity bounds.
+    
+    Returns:
+        (validity, reason) where validity is 'valid', 'invalid', or 'unavailable'
+    """
+    if mode == "none" or pixels_per_mm is None:
+        return "unavailable", "No calibration reference detected in this image."
+    
+    if marker_count <= 0:
+        return "invalid", "Calibration claimed but no valid markers were detected."
+    
+    if not np.isfinite(pixels_per_mm) or pixels_per_mm <= 0:
+        return "invalid", f"Calibration scale is not a positive finite number ({pixels_per_mm})."
+    
+    if pixels_per_mm < _CALIBRATION_PPMM_MIN or pixels_per_mm > _CALIBRATION_PPMM_MAX:
+        return "invalid", (
+            f"Calibration scale {pixels_per_mm:.2f} px/mm is outside sanity bounds "
+            f"[{_CALIBRATION_PPMM_MIN}, {_CALIBRATION_PPMM_MAX}] px/mm."
+        )
+    
+    return "valid", ""
+
 
 @dataclass
 class CalibrationResult:
@@ -30,6 +62,8 @@ class CalibrationResult:
     homography: Optional[np.ndarray] = None
     rectified: bool = False
     message: str = ""
+    validity: str = "unavailable"  # 'valid', 'invalid', 'unavailable'
+    validity_reason: str = ""
     
     def to_dict(self) -> Dict:
         return {
@@ -38,6 +72,8 @@ class CalibrationResult:
             "pixels_per_mm": round(self.pixels_per_mm, 4) if self.pixels_per_mm else None,
             "marker_count": self.marker_count,
             "rectified": self.rectified,
+            "validity": self.validity,
+            "validity_reason": self.validity_reason,
             "message": self.message,
         }
 
@@ -59,6 +95,11 @@ def detect_calibration(
     # Try ArUco detection
     aruco_result = _detect_aruco(image_rgb)
     if aruco_result.calibrated:
+        validity, validity_reason = _validate_calibration(
+            aruco_result.pixels_per_mm, aruco_result.marker_count, aruco_result.mode
+        )
+        aruco_result.validity = validity
+        aruco_result.validity_reason = validity_reason
         return aruco_result
     
     # Try manual scale
@@ -67,18 +108,24 @@ def detect_calibration(
         ref_mm = manual_scale.get("reference_mm", 0)
         if ref_px > 0 and ref_mm > 0:
             ppmm = ref_px / ref_mm
+            validity, validity_reason = _validate_calibration(ppmm, 1, "manual")
             return CalibrationResult(
                 calibrated=True,
                 mode="manual",
                 pixels_per_mm=ppmm,
+                validity=validity,
+                validity_reason=validity_reason,
                 message=f"Manual calibration: {ppmm:.2f} pixels/mm "
-                        f"({ref_px} px = {ref_mm} mm)",
+                        f"({ref_px} px = {ref_mm} mm)"
+                        + (f" — {validity_reason}" if validity != "valid" else ""),
             )
     
     # No calibration
     return CalibrationResult(
         calibrated=False,
         mode="none",
+        validity="unavailable",
+        validity_reason="No calibration reference detected in this image.",
         message="Metric calibration unavailable — measurements shown in pixels. "
                 "L/B ratio does not require absolute scale and is valid.",
     )

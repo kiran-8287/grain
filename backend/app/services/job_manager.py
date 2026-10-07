@@ -59,6 +59,7 @@ class JobManager:
         manual_scale: Optional[Dict] = None,
         grade: str = "grade_a",
         profile: Optional[Any] = None,
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run analysis synchronously and store result."""
         job_id = self.create_job()
@@ -77,6 +78,7 @@ class JobManager:
                 grade=grade,
                 profile=profile,
                 job_id=job_id,
+                request_id=request_id,
             )
             job["status"] = "completed"
             job["progress_stage"] = "Completed"

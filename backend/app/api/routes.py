@@ -7,7 +7,7 @@ import logging
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
 from backend.app.schemas.models import (
     AnalysisResultResponse,
@@ -75,6 +75,7 @@ def get_standards():
 
 @router.post("/analyze")
 async def analyze_rice_image(
+    request: Request,
     file: UploadFile = File(...),
     grade: str = Form("grade_a"),
     reference_pixels: Optional[float] = Form(None),
@@ -99,6 +100,7 @@ async def analyze_rice_image(
         manual_scale=manual_scale,
         grade=grade,
         profile=profile,
+        request_id=getattr(request.state, "request_id", None),
     )
 
     if not result.get("success", False) and "error" in result:

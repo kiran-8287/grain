@@ -312,6 +312,7 @@ class RiceQualityPipeline:
         grade: str = "grade_a",
         profile: Optional[Union[str, Dict[str, Any], GrainProfile]] = None,
         job_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute full analysis pipeline on an image.
@@ -343,6 +344,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "analysis_started",
             job_id=job_id,
+            request_id=request_id,
             filename=filename,
             file_size_bytes=file_size,
             input_source="upload" if isinstance(image_source, bytes) else "other",
@@ -355,6 +357,7 @@ class RiceQualityPipeline:
             structured_logger.error(
                 "analysis_failed",
                 job_id=job_id,
+                request_id=request_id,
                 status="failed",
                 failed_stage="image_decode",
                 error_type="ValidationError",
@@ -372,6 +375,7 @@ class RiceQualityPipeline:
             structured_logger.error(
                 "analysis_failed",
                 job_id=job_id,
+                request_id=request_id,
                 status="failed",
                 failed_stage="image_decode",
                 error_type="DecodeError",
@@ -391,6 +395,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "image_decoded",
             job_id=job_id,
+            request_id=request_id,
             width=w,
             height=h,
             format=getattr(image_info, "format_", getattr(image_info, "format", None)),
@@ -411,6 +416,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "rice_gate_completed",
             job_id=job_id,
+            request_id=request_id,
             duration_ms=gate_ms,
             status=gate_status,
             has_rice=rice_gate.get("has_rice", False),
@@ -437,6 +443,7 @@ class RiceQualityPipeline:
             structured_logger.info(
                 "analysis_completed",
                 job_id=job_id,
+                request_id=request_id,
                 status="success",
                 rice_detected=False,
                 total_processing_ms=int((time.monotonic() - t0) * 1000),
@@ -547,6 +554,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "segmentation_completed",
             job_id=job_id,
+            request_id=request_id,
             duration_ms=seg_ms,
             method=seg_method,
             grain_count=n_grains,
@@ -584,6 +592,7 @@ class RiceQualityPipeline:
             structured_logger.info(
                 "analysis_completed",
                 job_id=job_id,
+                request_id=request_id,
                 status="success",
                 rice_detected=False,
                 grain_count=0,
@@ -619,6 +628,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "geometry_completed",
             job_id=job_id,
+            request_id=request_id,
             duration_ms=geom_ms,
             grain_count=len(geometries),
         )
@@ -637,6 +647,8 @@ class RiceQualityPipeline:
         measurement_unit = "mm" if calibration_res.calibrated else "pixels"
         active_profile = profile  # None is valid — triggers Tier 2 / Tier 3
 
+        calibration_info = calibration_res.to_dict() if calibration_res else {}
+
         (
             whole_kernel_len,
             whole_len_source,
@@ -647,6 +659,7 @@ class RiceQualityPipeline:
             profile=active_profile,
             geometries=geometries,
             measurement_unit=measurement_unit,
+            calibration=calibration_info,
         )
 
         broken_threshold_fraction = float(get_threshold("broken", "whole_kernel_fraction", 0.75))
@@ -956,6 +969,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "broken_classification_completed",
             job_id=job_id,
+            request_id=request_id,
             duration_ms=bc_ms,
             grain_count=len(classified_grains),
             whole_count=whole_count,
@@ -1003,6 +1017,13 @@ class RiceQualityPipeline:
             "reference_source": whole_len_source,
             "reference_status": whole_len_status,
             "reference_profile_name": whole_len_meta.get("profile_name"),
+            "reference_data_status": whole_len_meta.get("reference_data_status"),
+            "reference_unit": whole_len_meta.get("reference_unit", measurement_unit),
+            "reference_production_eligible": whole_len_meta.get("production_eligible", False),
+            "reference_calibration_required": whole_len_meta.get("calibration_required", False),
+            "reference_calibration_status": whole_len_meta.get("calibration_status"),
+            "reference_count": whole_len_meta.get("reference_count") or whole_len_meta.get("candidate_count"),
+            "reference_explanation": whole_len_meta.get("reason"),
             "damaged_count": damaged_count,
             "damaged_percent": to_pct(damaged_count, damaged_analyzed_count) if damaged_analyzed_count else None,
             "damaged_analyzed_count": damaged_analyzed_count,
@@ -1135,6 +1156,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "annotation_completed",
             job_id=job_id,
+            request_id=request_id,
             duration_ms=ann_ms,
         )
 
@@ -1184,6 +1206,7 @@ class RiceQualityPipeline:
         structured_logger.info(
             "analysis_completed",
             job_id=job_id,
+            request_id=request_id,
             status="success",
             rice_detected=True,
             grain_count=sample_summary.get("total_rice_grains", n_grains),

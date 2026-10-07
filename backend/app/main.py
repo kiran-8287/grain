@@ -5,6 +5,7 @@ FastAPI Main Application for GRAIN QUALITY ANALYZER.
 import logging
 import os
 import sys
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -57,6 +58,84 @@ app = FastAPI(
     description="Automated Image-Based Raw Milled Rice Grain Quality Analysis System",
     version="1.0.0",
 )
+
+
+class RequestLoggingMiddleware:
+    """Middleware to emit structured request lifecycle events."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "UNKNOWN")
+        path = scope.get("path", "/")
+        route = scope.get("route", None)
+        route_path = getattr(route, "path", path) if route else path
+
+        import uuid as _uuid
+        request_id = str(_uuid.uuid4())
+        if "state" not in scope:
+            scope["state"] = {}
+        scope["state"]["request_id"] = request_id
+        structured_logger.info(
+            "request_started",
+            request_id=request_id,
+            method=method,
+            path=path,
+            route=route_path,
+        )
+
+        t_start = time.monotonic()
+        error_type = None
+        error_message = None
+        status_code = 500
+        original_send = send
+
+        async def wrapped_send(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = int(message.get("status", 500))
+            await original_send(message)
+
+        try:
+            await self.app(scope, receive, wrapped_send)
+            return
+        except Exception as exc:
+            error_type = type(exc).__name__
+            error_message = str(exc)
+            raise
+        finally:
+            duration_ms = int((time.monotonic() - t_start) * 1000)
+            if error_type is not None:
+                structured_logger.error(
+                    "request_failed",
+                    request_id=request_id,
+                    method=method,
+                    path=path,
+                    route=route_path,
+                    status_code=status_code,
+                    duration_ms=duration_ms,
+                    error_type=error_type,
+                    error_message=error_message,
+                )
+            else:
+                structured_logger.info(
+                    "request_finished",
+                    request_id=request_id,
+                    method=method,
+                    path=path,
+                    route=route_path,
+                    status_code=status_code,
+                    ok=True,
+                    duration_ms=duration_ms,
+                )
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173,http://localhost:3000")
 ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]

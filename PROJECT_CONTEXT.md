@@ -656,6 +656,13 @@ UI:
 Logging:
     Structured + job-aware + stage timing + rotating file logging
 
+Monitoring:
+    Streamlit read-only dashboard
+    Persistent structured JSON Lines logs
+    API metrics + analysis stage metrics
+    Errors/failures + memory monitoring
+    Dashboard: streamlit run monitoring/app.py
+
 YOLO:
     Not production
 

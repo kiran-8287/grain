@@ -285,22 +285,44 @@ def resolve_whole_kernel_reference(
     profile: Optional[Union[GrainProfile, Dict[str, Any], str]] = None,
     geometries: Optional[List[GrainGeometry]] = None,
     measurement_unit: str = "pixels",
+    calibration: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Optional[float], str, str, Dict[str, Any]]:
     """
-    Resolve whole-kernel reference length using the 3-tier hierarchy:
+    Resolve whole-kernel reference length using the reference hierarchy:
     
-    1. PRIMARY: Configured / Trusted Reference Profile (GrainProfile)
-    2. SECONDARY FALLBACK: Validated sample-derived reference
-       (only if convincing evidence of an intact whole-grain population exists)
-    3. UNDETERMINED: Reference unavailable -> classification becomes 'undetermined'
+    1. Explicit calibrated physical profile (mm) + valid calibration
+    2. Explicit valid same-image/sample reference
+    3. Sample-derived whole reference from intact population in same image
+    4. Explicit legacy pixel profile (demo-only, proxy)
+    5. No valid reference -> undetermined
     
     Returns:
         (reference_length, reference_source, reference_status, metadata_dict)
         where:
         - reference_source: 'profile', 'sample_derived', or 'unavailable'
         - reference_status: 'reliable', 'limited', or 'undetermined'
+        - metadata includes: reference_data_status, production_eligible,
+          calibration_required, calibration_status, reference_unit, etc.
     """
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {
+        "reference_unit": measurement_unit,
+        "calibration_required": False,
+        "calibration_status": "unavailable",
+        "calibration_validity": "unavailable",
+        "calibration_validity_reason": "",
+    }
+
+    calibration_status = "unavailable"
+    calibration_validity = "unavailable"
+    calibration_validity_reason = ""
+    if calibration:
+        if calibration.get("calibrated"):
+            calibration_status = calibration.get("mode", "unavailable")
+        calibration_validity = calibration.get("validity", "unavailable")
+        calibration_validity_reason = calibration.get("validity_reason", "")
+    metadata["calibration_status"] = calibration_status
+    metadata["calibration_validity"] = calibration_validity
+    metadata["calibration_validity_reason"] = calibration_validity_reason
 
     # -------------------------------------------------------------
     # TIER 1: Configured / Trusted Profile
@@ -314,15 +336,60 @@ def resolve_whole_kernel_reference(
 
     if active_profile is not None:
         is_valid, err_msg = active_profile.validate()
-        if is_valid and active_profile.reference_unit == measurement_unit:
+        if not is_valid:
+            logger.warning(f"Profile '{active_profile.profile_name}' is invalid: {err_msg}")
+            active_profile = None
+
+    if active_profile is not None:
+        profile_unit = active_profile.reference_unit
+        profile_data_status = active_profile.data_status or "Proxy"
+        production_eligible = bool(active_profile.production_eligible)
+
+        # Physical mm profile requires valid calibration
+        if profile_unit == "mm":
+            metadata["calibration_required"] = True
+            if calibration_validity != "valid":
+                logger.warning(
+                    f"Profile '{active_profile.profile_name}' is a physical mm profile, "
+                    f"but this image calibration is {calibration_validity}. "
+                    f"Cannot use mm reference without valid metric calibration."
+                )
+                return (
+                    None,
+                    "unavailable",
+                    "undetermined",
+                    {
+                        **metadata,
+                        "profile_name": active_profile.profile_name,
+                        "reference_unit": profile_unit,
+                        "reference_data_status": profile_data_status,
+                        "production_eligible": production_eligible,
+                        "reason": (
+                            "Physical profile supplied but calibration is not valid "
+                            f"({calibration_validity}: {calibration_validity_reason})."
+                            if calibration_validity_reason
+                            else "Physical profile supplied but calibration is not valid for this image."
+                        ),
+                    },
+                )
+            # mm profile + valid calibration -> production eligible
+            ref_len = float(active_profile.whole_kernel_length)
+            metadata.update({
+                "profile_name": active_profile.profile_name,
+                "profile_source": active_profile.source,
+                "reference_unit": profile_unit,
+                "reference_count": active_profile.reference_count,
+                "reference_data_status": profile_data_status,
+                "production_eligible": True,
+                "data_status": profile_data_status,
+            })
+            return ref_len, "profile", "reliable", metadata
+
+        # Legacy pixel profile: demo-only, proxy, NOT production eligible
+        if profile_unit == "pixels":
             ref_len = float(active_profile.whole_kernel_length)
 
             # Scale-compatibility guard for pixel-unit profiles.
-            # A pixel reference is only valid for images taken at the same camera
-            # distance as the calibration setup. If the observed sample lengths
-            # are wildly inconsistent with the profile (ratio outside 0.3x–3.0x
-            # of the sample median), the profile is the wrong scale and must not
-            # be used — fall through to sample-derived reference instead.
             if measurement_unit == "pixels" and lengths and len(lengths) >= 3:
                 sample_median = float(np.median(lengths))
                 ratio = ref_len / sample_median if sample_median > 0 else 0.0
@@ -334,77 +401,73 @@ def resolve_whole_kernel_reference(
                         f"ratio={ratio:.2f} outside [{SCALE_LO},{SCALE_HI}]). "
                         f"Falling back to sample-derived reference."
                     )
-                    # Do NOT return here — fall through to Tier 2 below
+                    # Fall through to Tier 3 below
                 else:
-                    metadata = {
+                    metadata.update({
                         "profile_name": active_profile.profile_name,
                         "profile_source": active_profile.source,
-                        "reference_unit": active_profile.reference_unit,
+                        "reference_unit": profile_unit,
                         "reference_count": active_profile.reference_count,
                         "scale_ratio": round(ratio, 3),
-                    }
-                    return ref_len, "profile", "reliable", metadata
+                        "reference_data_status": profile_data_status,
+                        "production_eligible": production_eligible,
+                        "data_status": profile_data_status,
+                    })
+                    # Pixel profile is NEVER labeled "reliable" — it is a scale-specific proxy
+                    return ref_len, "profile", "limited", metadata
             else:
-                metadata = {
+                metadata.update({
                     "profile_name": active_profile.profile_name,
                     "profile_source": active_profile.source,
-                    "reference_unit": active_profile.reference_unit,
+                    "reference_unit": profile_unit,
                     "reference_count": active_profile.reference_count,
-                }
-                return ref_len, "profile", "reliable", metadata
-        elif is_valid:
-            logger.info(
-                f"Profile unit '{active_profile.reference_unit}' does not match measurement unit '{measurement_unit}'. Falling back to sample analysis."
-            )
+                    "reference_data_status": profile_data_status,
+                    "production_eligible": production_eligible,
+                    "data_status": profile_data_status,
+                })
+                # Pixel profile is NEVER labeled "reliable" — it is a scale-specific proxy
+                return ref_len, "profile", "limited", metadata
 
     # -------------------------------------------------------------
-    # TIER 2: Validated Sample-Derived Reference Fallback
+    # TIER 2/3: Validated Sample-Derived Reference Fallback
     # -------------------------------------------------------------
     # A sample can only derive a reference if there is sufficient evidence
     # of intact whole grains.
-    # RULE: Do NOT use a simple median of all lengths.
-    # RULE: Do NOT turn an all-broken or mostly-broken sample into a whole reference.
     if not lengths or len(lengths) < 3:
-        # For N <= 2 without a profile, an intact reference CANNOT be reliably inferred.
         return (
             None,
             "unavailable",
             "undetermined",
-            {"reason": f"Sample size ({len(lengths) if lengths else 0}) <= 2 without trusted profile."},
+            {
+                **metadata,
+                "reason": f"Sample size ({len(lengths) if lengths else 0}) <= 2 without trusted profile.",
+            },
         )
 
     arr_lengths = np.array(lengths, dtype=np.float64)
     n = len(arr_lengths)
 
-    # Search for an upper intact population
-    # Step 1: Identify upper cluster candidates
-    # Grains that are significantly longer than short fragments
     max_len = float(np.max(arr_lengths))
     min_len = float(np.min(arr_lengths))
     span = max_len - min_len
 
-    # If the grains are in a single compact band (span < 0.25 * max_len),
-    # they are unimodal (could be all whole OR all broken fragments).
     if span < 0.25 * max_len:
-        # Check supporting geometry if available:
         if geometries and len(geometries) == n:
             med_lb = float(np.median([g.lb_ratio or 1.0 for g in geometries]))
             med_solidity = float(np.median([g.solidity for g in geometries]))
-            # Typical intact rice has distinct elongation (L/B >= 2.2) and high convex solidity (>= 0.90)
             if med_lb >= 2.2 and med_solidity >= 0.88:
                 candidate_whole = arr_lengths
             else:
-                # All short fragments / rounded pieces with low L/B -> do NOT guess whole
                 return (
                     None,
                     "unavailable",
                     "undetermined",
-                    {"reason": "Uniform sample lacks elongation evidence of intact whole grains; reference unavailable."},
+                    {
+                        **metadata,
+                        "reason": "Uniform sample lacks elongation evidence of intact whole grains; reference unavailable.",
+                    },
                 )
         else:
-            # Without geometry: only accept uniform sample as intact if lengths are in the
-            # characteristic full-kernel scale (>= 85 px or >= 6.0 mm). Short uniform pieces (< 80 px)
-            # must not be assumed whole without a profile.
             if max_len >= 85.0 or (measurement_unit == "mm" and max_len >= 6.0):
                 candidate_whole = arr_lengths
             else:
@@ -412,32 +475,31 @@ def resolve_whole_kernel_reference(
                     None,
                     "unavailable",
                     "undetermined",
-                    {"reason": f"Sample grains are uniformly short ({max_len:.1f} < 85 px) without trusted profile; reference unavailable."},
+                    {
+                        **metadata,
+                        "reason": f"Sample grains are uniformly short ({max_len:.1f} < 85 px) without trusted profile; reference unavailable.",
+                    },
                 )
     else:
-        # Bimodal or mixed sample: separate intact population from fragments.
-        # Whole grains must be distinct from fragments (at least 1.25x the shortest fragment).
         cutoff = max(min_len + 0.35 * span, 0.75 * max_len)
         candidate_whole = arr_lengths[arr_lengths >= cutoff]
-
-        # Refine candidate population: remove outlier spikes (> 1.25 * median of candidate)
         if len(candidate_whole) >= 3:
             cand_med = float(np.median(candidate_whole))
             candidate_whole = candidate_whole[
                 (candidate_whole >= 0.85 * cand_med) & (candidate_whole <= 1.20 * cand_med)
             ]
 
-    # VALIDATION CHECKS FOR SAMPLE-DERIVED REFERENCE:
-    # 1. Candidate count: must have at least 3 grains
     if len(candidate_whole) < 3:
         return (
             None,
             "unavailable",
             "undetermined",
-            {"reason": f"Only {len(candidate_whole)} candidate whole grains found; minimum 3 required."},
+            {
+                **metadata,
+                "reason": f"Only {len(candidate_whole)} candidate whole grains found; minimum 3 required.",
+            },
         )
 
-    # 2. Internal consistency: coefficient of variation (std / mean) of intact grains must be tight (<= 0.14)
     cand_mean = float(np.mean(candidate_whole))
     cand_std = float(np.std(candidate_whole))
     cv = cand_std / cand_mean if cand_mean > 0 else 1.0
@@ -447,16 +509,22 @@ def resolve_whole_kernel_reference(
             None,
             "unavailable",
             "undetermined",
-            {"reason": f"Candidate whole-grain population has high length variance (CV={cv:.2f} > 0.15)."},
+            {
+                **metadata,
+                "reason": f"Candidate whole-grain population has high length variance (CV={cv:.2f} > 0.15).",
+            },
         )
 
     ref_len = float(np.median(candidate_whole))
     status = "reliable" if len(candidate_whole) >= 10 else "limited"
-    metadata = {
+    metadata.update({
         "candidate_count": int(len(candidate_whole)),
         "candidate_cv": round(cv, 4),
         "method": "upper_population_clustering",
-    }
+        "reference_data_status": "Sample-Derived",
+        "production_eligible": False,
+        "data_status": "Sample-Derived",
+    })
     return ref_len, "sample_derived", status, metadata
 
 

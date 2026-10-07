@@ -21,23 +21,30 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
     const src = summary.reference_source;
     const refLen = summary.whole_reference_length;
     const unit = summary.measurement_unit || 'px';
+    const dataStatus = summary.reference_data_status;
+    const profileName = summary.reference_profile_name;
 
     if (src === 'profile') {
       const isPixelUnit = unit === 'px' || unit === 'pixels' || unit.toLowerCase().startsWith('pixel');
+      const statusColor = dataStatus === 'Measured' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200';
       return (
         <div className="flex flex-col items-end gap-0.5">
-          <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-            Reference: Profile
-            {summary.reference_profile_name ? ` (${summary.reference_profile_name})` : ''}
+          <span className={`text-[11px] font-semibold ${statusColor} border px-2 py-0.5 rounded-md`}>
+            Reference: Profile{profileName ? ` (${profileName})` : ''}
           </span>
           <span className="text-[10px] text-text-secondary">
             Whole-kernel reference: {refLen ? `${refLen} ${unit}` : 'Configured'}
-            {' '}
+            {' · '}
             Criterion: &lt; 75% of reference = Broken
           </span>
           {isPixelUnit && (
             <span className="text-[10px] italic text-text-muted">
-              Pixel reference is scale-specific to the calibrated capture setup — not a universal physical measurement.
+              Pixel reference is scale-specific — not a universal physical measurement.
+            </span>
+          )}
+          {dataStatus && (
+            <span className="text-[10px] text-text-muted">
+              Data status: {dataStatus}
             </span>
           )}
         </div>
@@ -45,15 +52,30 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
     }
     if (src === 'sample_derived') {
       return (
-        <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
-          Sample-Derived Reference: {refLen ? `${refLen} ${unit}` : 'Candidate population'}
-        </span>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+            Sample-Derived Reference
+          </span>
+          <span className="text-[10px] text-text-secondary">
+            Whole-kernel reference: {refLen ? `${refLen} ${unit}` : 'Candidate population'}
+          </span>
+          {dataStatus && (
+            <span className="text-[10px] text-text-muted">
+              Data status: {dataStatus}
+            </span>
+          )}
+        </div>
       );
     }
     return (
-      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-        Reference: Undetermined
-      </span>
+      <div className="flex flex-col items-end gap-0.5">
+        <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+          Reference: Not Determinable
+        </span>
+        <span className="text-[10px] text-text-secondary">
+          No valid whole-kernel reference available for this image.
+        </span>
+      </div>
     );
   };
 
@@ -66,10 +88,16 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
             Whole vs Broken Analysis
           </span>
           <span className="text-xs text-text-secondary font-medium">
-            FSSAI 3/4 Length Criterion (0.75× Reference)
+            3/4 Whole-Kernel Length Rule (0.75× Reference)
           </span>
         </div>
         <div>{referenceSourceBadge()}</div>
+      </div>
+
+      {/* Regulatory note */}
+      <div className="text-[10px] text-text-muted bg-surface-subtle border border-border/50 rounded-lg px-3 py-2">
+        Image-based result is calculated by grain count. Regulatory broken-rice limits may use
+        mass-based measurements and are not established by count alone.
       </div>
 
       {/* Primary Whole vs Broken Summary Grid */}
@@ -123,7 +151,7 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
 
         {/* Broken Percentage */}
         <div className="bg-surface border border-rose-200 bg-rose-50/30 rounded-xl p-3.5 shadow-sm">
-          <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider block">Broken %</span>
+          <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider block">Broken % by count</span>
           <div className="mt-1 flex items-baseline gap-1.5">
             <span className="text-3xl font-black text-rose-600">{brokenPct}</span>
           </div>
