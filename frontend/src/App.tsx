@@ -21,6 +21,32 @@ export const App: React.FC = () => {
   const [nonRiceMessage, setNonRiceMessage] = useState<string | null>(null);
   const [nonRiceResult, setNonRiceResult] = useState<AnalysisResult | null>(null);
 
+  const [showGrainIds, setShowGrainIds] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('displayPreferences');
+      if (stored) return JSON.parse(stored).showGrainIds ?? true;
+    } catch {}
+    return true;
+  });
+  const [showMasks, setShowMasks] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('displayPreferences');
+      if (stored) return JSON.parse(stored).showMasks ?? true;
+    } catch {}
+    return true;
+  });
+  const [showBoxes, setShowBoxes] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('displayPreferences');
+      if (stored) return JSON.parse(stored).showBoxes ?? true;
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('displayPreferences', JSON.stringify({ showGrainIds, showMasks, showBoxes }));
+  }, [showGrainIds, showMasks, showBoxes]);
+
   const riceGate = nonRiceResult?.rice_gate;
 
   useEffect(() => {
@@ -210,6 +236,12 @@ export const App: React.FC = () => {
                   grains={result.grains}
                   selectedGrainId={selectedGrainId}
                   onSelectGrain={(id) => setSelectedGrainId(id)}
+                  showMasks={showMasks}
+                  showBoxes={showBoxes}
+                  showIds={showGrainIds}
+                  onToggleMasks={setShowMasks}
+                  onToggleBoxes={setShowBoxes}
+                  onToggleIds={setShowGrainIds}
                 />
 
                 {/* 3. Grain Population Table */}
@@ -219,6 +251,7 @@ export const App: React.FC = () => {
                     selectedGrainId={selectedGrainId}
                     onSelectGrain={(id) => setSelectedGrainId(id)}
                     unit={result.summary.measurement_unit}
+                    showGrainIds={showGrainIds}
                   />
                 )}
 
@@ -226,6 +259,7 @@ export const App: React.FC = () => {
                 <GrainDetailPanel
                   grain={selectedGrain}
                   unit={result.summary.measurement_unit}
+                  showGrainId={showGrainIds}
                 />
 
                 {/* 5. Export Controls */}

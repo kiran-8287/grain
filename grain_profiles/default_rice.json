@@ -1,0 +1,21 @@
+{
+  "profile_name": "default_rice",
+  "reference_unit": "pixels",
+  "whole_kernel_length": 154.1,
+  "whole_kernel_breadth": 48.2,
+  "whole_kernel_lb_ratio": 3.2,
+  "source": "measured_50grain_test_image",
+  "reference_count": 50,
+  "data_status": "Proxy",
+  "notes": "PROXY \u2014 zoom-level dependent. Measured from '6. Fifty rice grains.png' (50 grains detected, mean=148.1 px, P80=154.1 px, CV=0.045). This pixel reference is only valid for images taken at the same camera distance as that test image. Do NOT use as default for arbitrary images \u2014 this profile must be explicitly requested by the caller. For variable imaging setups, the system automatically uses sample-derived reference (Tier 2) when no profile is supplied.",
+  "measurement_evidence": {
+    "image": "6. Fifty rice grains.png",
+    "grains_detected": 50,
+    "mean_px": 148.1,
+    "median_px": 148.7,
+    "stdev_px": 6.7,
+    "cv": 0.045,
+    "p80_px": 154.1,
+    "method": "effective_length_pixels via pipeline.analyze()"
+  }
+}

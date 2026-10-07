@@ -48,8 +48,10 @@ export interface GrainGeometry {
   aspect_ratio: number;
   length_pixels: number;
   breadth_pixels: number;
+  effective_length_pixels?: number;
   length_mm?: number | null;
   breadth_mm?: number | null;
+  effective_length_mm?: number | null;
   lb_ratio?: number | null;
   measurement_quality: string;
   is_anomalous?: boolean;
@@ -94,6 +96,14 @@ export interface ForeignObject {
 
 export interface SampleSummary {
   total_rice_grains: number;
+  total_count?: number;
+  whole_count?: number;
+  undetermined_count?: number;
+  whole_percent?: number | null;
+  whole_reference_length?: number | null;
+  reference_source?: string;
+  reference_status?: string;
+  reference_profile_name?: string;
   uncertain_grains: number;
   rejected_grains: number;
   foreign_matter_count: number;

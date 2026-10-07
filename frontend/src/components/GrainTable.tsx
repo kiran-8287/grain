@@ -6,16 +6,17 @@ interface GrainTableProps {
   selectedGrainId: number | null;
   onSelectGrain: (id: number) => void;
   unit: string;
+  showGrainIds?: boolean;
 }
 
-const confidenceBadgeClass = (label: 'HIGH' | 'MEDIUM' | 'LOW' | undefined) => {
-  switch (label) {
-    case 'HIGH':
-      return 'bg-success-bg text-success border-success/20';
-    case 'MEDIUM':
-      return 'bg-warning-bg text-warning border-warning/20';
-    case 'LOW':
-      return 'bg-error-bg text-error border-error/20';
+const statusBadgeClass = (status: string | undefined) => {
+  switch (status) {
+    case 'whole':
+      return 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold';
+    case 'broken':
+      return 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
+    case 'undetermined':
+      return 'bg-slate-100 text-slate-700 border-slate-300 font-medium';
     default:
       return 'bg-surface-subtle text-text-muted border border-border';
   }
@@ -26,6 +27,7 @@ export const GrainTable: React.FC<GrainTableProps> = ({
   selectedGrainId,
   onSelectGrain,
   unit,
+  showGrainIds = true,
 }) => {
   return (
     <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm space-y-3">
@@ -42,8 +44,9 @@ export const GrainTable: React.FC<GrainTableProps> = ({
           <thead className="sticky top-0 bg-surface-subtle text-text-secondary font-semibold uppercase text-[10px] tracking-wider z-10">
             <tr>
               <th className="py-2 px-3">Grain #</th>
-              <th className="py-2 px-3">Confidence</th>
-              <th className="py-2 px-3">Length ({unit})</th>
+              <th className="py-2 px-3">Status</th>
+              <th className="py-2 px-3">Effective Length ({unit})</th>
+              <th className="py-2 px-3">Length Ratio</th>
               <th className="py-2 px-3">Breadth ({unit})</th>
               <th className="py-2 px-3">L/B Ratio</th>
             </tr>
@@ -51,12 +54,21 @@ export const GrainTable: React.FC<GrainTableProps> = ({
           <tbody className="divide-y divide-border">
             {grains.map((g) => {
               const isSelected = g.id === selectedGrainId;
-              const len = g.geometry.length_mm !== null && g.geometry.length_mm !== undefined
-                ? g.geometry.length_mm
-                : g.geometry.length_pixels;
-              const brd = g.geometry.breadth_mm !== null && g.geometry.breadth_mm !== undefined
-                ? g.geometry.breadth_mm
-                : g.geometry.breadth_pixels;
+              const brokenDefect = g.defects?.broken;
+              const status = brokenDefect?.broken_label;
+              const ratio = brokenDefect?.length_ratio ?? brokenDefect?.broken_ratio;
+
+              const len =
+                brokenDefect?.effective_length ??
+                (g.geometry.effective_length_mm ??
+                  g.geometry.length_mm ??
+                  g.geometry.effective_length_pixels ??
+                  g.geometry.length_pixels);
+
+              const brd =
+                g.geometry.breadth_mm !== null && g.geometry.breadth_mm !== undefined
+                  ? g.geometry.breadth_mm
+                  : g.geometry.breadth_pixels;
 
               return (
                 <tr
@@ -68,13 +80,22 @@ export const GrainTable: React.FC<GrainTableProps> = ({
                       : 'hover:bg-surface-subtle'
                   }`}
                 >
-                  <td className="py-2.5 px-3 font-semibold text-text-primary">#{g.id}</td>
+                  <td className="py-2.5 px-3 font-semibold text-text-primary">
+                    {showGrainIds ? `#${g.id}` : '—'}
+                  </td>
                   <td className="py-2.5 px-3">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${confidenceBadgeClass(g.confidence_label)}`}>
-                      {g.confidence_label ?? `${Math.round(g.confidence * 100)}%`}
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wide border ${statusBadgeClass(
+                        status
+                      )}`}
+                    >
+                      {status || 'undetermined'}
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 font-mono text-text-secondary">{len}</td>
+                  <td className="py-2.5 px-3 font-mono font-semibold text-text-primary">{len}</td>
+                  <td className="py-2.5 px-3 font-mono text-text-secondary">
+                    {ratio != null ? `${(ratio * 100).toFixed(1)}%` : '—'}
+                  </td>
                   <td className="py-2.5 px-3 font-mono text-text-secondary">{brd}</td>
                   <td className="py-2.5 px-3 font-mono text-brand font-medium">
                     {g.geometry.lb_ratio ?? 'N/A'}

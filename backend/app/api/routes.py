@@ -1,4 +1,4 @@
-﻿"""
+"""
 API Routes for GRAIN QUALITY ANALYZER.
 """
 
@@ -79,6 +79,7 @@ async def analyze_rice_image(
     grade: str = Form("grade_a"),
     reference_pixels: Optional[float] = Form(None),
     reference_mm: Optional[float] = Form(None),
+    profile: Optional[str] = Form(None),
 ):
     """Analyze uploaded rice-grain image."""
     contents = await file.read()
@@ -97,6 +98,7 @@ async def analyze_rice_image(
         filename=file.filename or "uploaded.jpg",
         manual_scale=manual_scale,
         grade=grade,
+        profile=profile,
     )
 
     if not result.get("success", False) and "error" in result:

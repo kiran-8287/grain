@@ -3,7 +3,7 @@ Per-grain geometry analysis module.
 
 Computes: area, perimeter, centroid, orientation, bounding box,
 fitted ellipse, minAreaRect, major/minor axes, solidity, aspect ratio,
-Length, Breadth, L/B ratio.
+Length, Breadth, L/B ratio, and contour-based effective length.
 
 Converts to mm only if calibration exists, otherwise uses pixels.
 """
@@ -11,10 +11,12 @@ Converts to mm only if calibration exists, otherwise uses pixels.
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
+
+from ml.quality.profiles import GrainProfile, get_default_grain_profile, load_grain_profile
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +38,16 @@ class GrainGeometry:
     aspect_ratio: float = 0.0
     length_pixels: float = 0.0
     breadth_pixels: float = 0.0
+    effective_length_pixels: float = 0.0
     length_mm: Optional[float] = None
     breadth_mm: Optional[float] = None
+    effective_length_mm: Optional[float] = None
     lb_ratio: Optional[float] = None
     measurement_quality: str = "good"
     is_anomalous: bool = False
     anomaly_reasons: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "grain_id": self.grain_id,
             "area_pixels": round(self.area_pixels, 2),
@@ -57,8 +61,10 @@ class GrainGeometry:
             "aspect_ratio": round(self.aspect_ratio, 4),
             "length_pixels": round(self.length_pixels, 2),
             "breadth_pixels": round(self.breadth_pixels, 2),
+            "effective_length_pixels": round(self.effective_length_pixels, 2),
             "length_mm": round(self.length_mm, 3) if self.length_mm is not None else None,
             "breadth_mm": round(self.breadth_mm, 3) if self.breadth_mm is not None else None,
+            "effective_length_mm": round(self.effective_length_mm, 3) if self.effective_length_mm is not None else None,
             "lb_ratio": round(self.lb_ratio, 4) if self.lb_ratio is not None else None,
             "measurement_quality": self.measurement_quality,
             "is_anomalous": self.is_anomalous,
@@ -83,7 +89,6 @@ def compute_grain_geometry(
     Returns:
         GrainGeometry object
     """
-    # Support positional or keyword arguments regardless of order
     if mask is None and "grain_id" in kwargs:
         grain_id = kwargs["grain_id"]
     if mask is None:
@@ -103,8 +108,10 @@ def compute_grain_geometry(
             aspect_ratio=0.0,
             length_pixels=0.0,
             breadth_pixels=0.0,
+            effective_length_pixels=0.0,
             length_mm=None,
             breadth_mm=None,
+            effective_length_mm=None,
             lb_ratio=None,
             measurement_quality="poor",
             is_anomalous=True,
@@ -144,8 +151,6 @@ def compute_grain_geometry(
             ellipse = cv2.fitEllipse(contour)
             fitted_ellipse = ellipse
             (ecx, ecy), (ma, MA), angle = ellipse
-            # OpenCV fitEllipse: MA is the larger axis, ma is the smaller
-            # But the naming can be confusing — MA/ma are width/height of ellipse
             major_axis = max(MA, ma)
             minor_axis = min(MA, ma)
             orientation = angle
@@ -159,11 +164,45 @@ def compute_grain_geometry(
     
     # Min area rectangle
     min_rect = None
+    rect_extent = major_axis
     if len(contour) >= 5:
-        min_rect = cv2.minAreaRect(contour)
-        rect_w, rect_h = min_rect[1]
-        # Cross-check with fitted ellipse
+        try:
+            min_rect = cv2.minAreaRect(contour)
+            rect_w, rect_h = min_rect[1]
+            rect_extent = max(rect_w, rect_h)
+        except Exception:
+            min_rect = None
     
+    # Robust principal-axis end-to-end projection measurement
+    # Rather than solely relying on fitted ellipse (which assumes elliptical shape),
+    # project actual contour points onto the grain's principal inertial orientation.
+    pts = contour.reshape(-1, 2).astype(np.float64)
+    mu20 = M["mu20"]
+    mu02 = M["mu02"]
+    mu11 = M["mu11"]
+    
+    # Inertial orientation angle in radians
+    theta = 0.5 * math.atan2(2.0 * mu11, mu20 - mu02)
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    
+    # Centered contour points projected onto principal and transverse axes
+    dx = pts[:, 0] - cx
+    dy = pts[:, 1] - cy
+    proj_u = dx * cos_t + dy * sin_t
+    proj_v = -dx * sin_t + dy * cos_t
+    
+    principal_span = float(np.max(proj_u) - np.min(proj_u)) if len(proj_u) > 0 else major_axis
+    transverse_span = float(np.max(proj_v) - np.min(proj_v)) if len(proj_v) > 0 else minor_axis
+    
+    # Contour caliper length along principal axis
+    caliper_length = max(principal_span, transverse_span)
+    
+    # Effective length reconciles principal projection, minAreaRect, and ellipse major axis
+    # It reflects true physical tip-to-tip extent without boundary distortion.
+    candidates = [v for v in [caliper_length, rect_extent, major_axis] if v > 0]
+    effective_length_pixels = float(np.median(candidates)) if candidates else float(major_axis)
+
     # Convex hull for solidity
     hull = cv2.convexHull(contour)
     hull_area = cv2.contourArea(hull)
@@ -184,9 +223,11 @@ def compute_grain_geometry(
     # Convert to mm if calibration exists
     length_mm = None
     breadth_mm = None
+    effective_length_mm = None
     if pixels_per_mm is not None and pixels_per_mm > 0:
         length_mm = length_pixels / pixels_per_mm
         breadth_mm = breadth_pixels / pixels_per_mm
+        effective_length_mm = effective_length_pixels / pixels_per_mm
     
     # Anomaly detection
     is_anomalous = False
@@ -228,8 +269,10 @@ def compute_grain_geometry(
         aspect_ratio=aspect_ratio,
         length_pixels=length_pixels,
         breadth_pixels=breadth_pixels,
+        effective_length_pixels=effective_length_pixels,
         length_mm=length_mm,
         breadth_mm=breadth_mm,
+        effective_length_mm=effective_length_mm,
         lb_ratio=lb_ratio,
         measurement_quality=measurement_quality,
         is_anomalous=is_anomalous,
@@ -237,55 +280,204 @@ def compute_grain_geometry(
     )
 
 
+def resolve_whole_kernel_reference(
+    lengths: List[float],
+    profile: Optional[Union[GrainProfile, Dict[str, Any], str]] = None,
+    geometries: Optional[List[GrainGeometry]] = None,
+    measurement_unit: str = "pixels",
+) -> Tuple[Optional[float], str, str, Dict[str, Any]]:
+    """
+    Resolve whole-kernel reference length using the 3-tier hierarchy:
+    
+    1. PRIMARY: Configured / Trusted Reference Profile (GrainProfile)
+    2. SECONDARY FALLBACK: Validated sample-derived reference
+       (only if convincing evidence of an intact whole-grain population exists)
+    3. UNDETERMINED: Reference unavailable -> classification becomes 'undetermined'
+    
+    Returns:
+        (reference_length, reference_source, reference_status, metadata_dict)
+        where:
+        - reference_source: 'profile', 'sample_derived', or 'unavailable'
+        - reference_status: 'reliable', 'limited', or 'undetermined'
+    """
+    metadata: Dict[str, Any] = {}
+
+    # -------------------------------------------------------------
+    # TIER 1: Configured / Trusted Profile
+    # -------------------------------------------------------------
+    active_profile: Optional[GrainProfile] = None
+    if profile is not None:
+        if isinstance(profile, GrainProfile):
+            active_profile = profile
+        else:
+            active_profile = load_grain_profile(profile)
+
+    if active_profile is not None:
+        is_valid, err_msg = active_profile.validate()
+        if is_valid and active_profile.reference_unit == measurement_unit:
+            ref_len = float(active_profile.whole_kernel_length)
+
+            # Scale-compatibility guard for pixel-unit profiles.
+            # A pixel reference is only valid for images taken at the same camera
+            # distance as the calibration setup. If the observed sample lengths
+            # are wildly inconsistent with the profile (ratio outside 0.3x–3.0x
+            # of the sample median), the profile is the wrong scale and must not
+            # be used — fall through to sample-derived reference instead.
+            if measurement_unit == "pixels" and lengths and len(lengths) >= 3:
+                sample_median = float(np.median(lengths))
+                ratio = ref_len / sample_median if sample_median > 0 else 0.0
+                SCALE_LO, SCALE_HI = 0.3, 3.0
+                if not (SCALE_LO <= ratio <= SCALE_HI):
+                    logger.warning(
+                        f"Profile '{active_profile.profile_name}' reference length {ref_len:.1f} px "
+                        f"is scale-incompatible with this image (sample median={sample_median:.1f} px, "
+                        f"ratio={ratio:.2f} outside [{SCALE_LO},{SCALE_HI}]). "
+                        f"Falling back to sample-derived reference."
+                    )
+                    # Do NOT return here — fall through to Tier 2 below
+                else:
+                    metadata = {
+                        "profile_name": active_profile.profile_name,
+                        "profile_source": active_profile.source,
+                        "reference_unit": active_profile.reference_unit,
+                        "reference_count": active_profile.reference_count,
+                        "scale_ratio": round(ratio, 3),
+                    }
+                    return ref_len, "profile", "reliable", metadata
+            else:
+                metadata = {
+                    "profile_name": active_profile.profile_name,
+                    "profile_source": active_profile.source,
+                    "reference_unit": active_profile.reference_unit,
+                    "reference_count": active_profile.reference_count,
+                }
+                return ref_len, "profile", "reliable", metadata
+        elif is_valid:
+            logger.info(
+                f"Profile unit '{active_profile.reference_unit}' does not match measurement unit '{measurement_unit}'. Falling back to sample analysis."
+            )
+
+    # -------------------------------------------------------------
+    # TIER 2: Validated Sample-Derived Reference Fallback
+    # -------------------------------------------------------------
+    # A sample can only derive a reference if there is sufficient evidence
+    # of intact whole grains.
+    # RULE: Do NOT use a simple median of all lengths.
+    # RULE: Do NOT turn an all-broken or mostly-broken sample into a whole reference.
+    if not lengths or len(lengths) < 3:
+        # For N <= 2 without a profile, an intact reference CANNOT be reliably inferred.
+        return (
+            None,
+            "unavailable",
+            "undetermined",
+            {"reason": f"Sample size ({len(lengths) if lengths else 0}) <= 2 without trusted profile."},
+        )
+
+    arr_lengths = np.array(lengths, dtype=np.float64)
+    n = len(arr_lengths)
+
+    # Search for an upper intact population
+    # Step 1: Identify upper cluster candidates
+    # Grains that are significantly longer than short fragments
+    max_len = float(np.max(arr_lengths))
+    min_len = float(np.min(arr_lengths))
+    span = max_len - min_len
+
+    # If the grains are in a single compact band (span < 0.25 * max_len),
+    # they are unimodal (could be all whole OR all broken fragments).
+    if span < 0.25 * max_len:
+        # Check supporting geometry if available:
+        if geometries and len(geometries) == n:
+            med_lb = float(np.median([g.lb_ratio or 1.0 for g in geometries]))
+            med_solidity = float(np.median([g.solidity for g in geometries]))
+            # Typical intact rice has distinct elongation (L/B >= 2.2) and high convex solidity (>= 0.90)
+            if med_lb >= 2.2 and med_solidity >= 0.88:
+                candidate_whole = arr_lengths
+            else:
+                # All short fragments / rounded pieces with low L/B -> do NOT guess whole
+                return (
+                    None,
+                    "unavailable",
+                    "undetermined",
+                    {"reason": "Uniform sample lacks elongation evidence of intact whole grains; reference unavailable."},
+                )
+        else:
+            # Without geometry: only accept uniform sample as intact if lengths are in the
+            # characteristic full-kernel scale (>= 85 px or >= 6.0 mm). Short uniform pieces (< 80 px)
+            # must not be assumed whole without a profile.
+            if max_len >= 85.0 or (measurement_unit == "mm" and max_len >= 6.0):
+                candidate_whole = arr_lengths
+            else:
+                return (
+                    None,
+                    "unavailable",
+                    "undetermined",
+                    {"reason": f"Sample grains are uniformly short ({max_len:.1f} < 85 px) without trusted profile; reference unavailable."},
+                )
+    else:
+        # Bimodal or mixed sample: separate intact population from fragments.
+        # Whole grains must be distinct from fragments (at least 1.25x the shortest fragment).
+        cutoff = max(min_len + 0.35 * span, 0.75 * max_len)
+        candidate_whole = arr_lengths[arr_lengths >= cutoff]
+
+        # Refine candidate population: remove outlier spikes (> 1.25 * median of candidate)
+        if len(candidate_whole) >= 3:
+            cand_med = float(np.median(candidate_whole))
+            candidate_whole = candidate_whole[
+                (candidate_whole >= 0.85 * cand_med) & (candidate_whole <= 1.20 * cand_med)
+            ]
+
+    # VALIDATION CHECKS FOR SAMPLE-DERIVED REFERENCE:
+    # 1. Candidate count: must have at least 3 grains
+    if len(candidate_whole) < 3:
+        return (
+            None,
+            "unavailable",
+            "undetermined",
+            {"reason": f"Only {len(candidate_whole)} candidate whole grains found; minimum 3 required."},
+        )
+
+    # 2. Internal consistency: coefficient of variation (std / mean) of intact grains must be tight (<= 0.14)
+    cand_mean = float(np.mean(candidate_whole))
+    cand_std = float(np.std(candidate_whole))
+    cv = cand_std / cand_mean if cand_mean > 0 else 1.0
+
+    if cv > 0.15:
+        return (
+            None,
+            "unavailable",
+            "undetermined",
+            {"reason": f"Candidate whole-grain population has high length variance (CV={cv:.2f} > 0.15)."},
+        )
+
+    ref_len = float(np.median(candidate_whole))
+    status = "reliable" if len(candidate_whole) >= 10 else "limited"
+    metadata = {
+        "candidate_count": int(len(candidate_whole)),
+        "candidate_cv": round(cv, 4),
+        "method": "upper_population_clustering",
+    }
+    return ref_len, "sample_derived", status, metadata
+
+
 def compute_robust_whole_kernel_length(
     grain_lengths: List[float],
     threshold_fraction: float = 0.75,
     robust_filter_fraction: float = 0.85,
     robust_iterations: int = 3,
+    profile: Optional[Union[GrainProfile, Dict[str, Any], str]] = None,
 ) -> Tuple[Optional[float], str]:
     """
-    Compute robust whole-kernel length estimate using iterative median.
+    Backwards-compatible wrapper around resolve_whole_kernel_reference.
     
-    Official conceptual rule: broken kernel is below three-fourths
-    of the whole-kernel length.
-    
-    DO NOT use plain mean. Use robust estimator:
-    1. L_whole = median(all valid grain lengths)
-    2. Iterate 3 times:
-       - select grains with length > 0.85 * L_whole
-       - recompute L_whole from those grains
-    
-    For very small samples (N <= 2): returns None with explanation.
-    
-    Args:
-        grain_lengths: List of grain lengths
-        threshold_fraction: Fraction of whole-kernel length below which grain is broken (default 0.75)
-        robust_filter_fraction: Filter fraction for robust estimation (default 0.85)
-        robust_iterations: Number of refinement iterations (default 3)
-        
     Returns:
         (whole_kernel_length, status) — status is 'reliable', 'limited', or 'undetermined'
     """
-    if not grain_lengths:
-        return None, "undetermined"
-    
-    n = len(grain_lengths)
-    
-    if n <= 2:
-        return None, "undetermined"
-    
-    lengths = np.array(grain_lengths)
-    l_whole = float(np.median(lengths))
-    
-    for _ in range(robust_iterations):
-        selected = lengths[lengths > robust_filter_fraction * l_whole]
-        if len(selected) < 3:
-            break
-        l_whole = float(np.median(selected))
-    
-    status = "reliable" if n >= 30 else "limited"
-    
-    return l_whole, status
+    ref_len, source, status, _ = resolve_whole_kernel_reference(
+        lengths=grain_lengths,
+        profile=profile,
+    )
+    return ref_len, status
 
 
 def classify_broken(
@@ -293,39 +485,79 @@ def classify_broken(
     whole_kernel_length: Optional[float],
     threshold_fraction: float = 0.75,
     small_broken_fraction: float = 0.25,
-) -> Dict:
+    reference_source: str = "profile",
+    reference_status: str = "reliable",
+    measurement_quality: str = "good",
+) -> Dict[str, Any]:
     """
-    Classify whether a grain is broken.
+    Classify whether a grain is broken based on its effective length relative to the whole-kernel reference.
+    
+    FSSAI & Standards Definition: A grain/fragment is broken if its length is less than three-fourths (0.75)
+    of the whole-kernel length.
     
     Args:
-        length: Grain length
-        whole_kernel_length: Robust whole-kernel length estimate
-        threshold_fraction: Broken if length < this fraction of whole kernel
-        small_broken_fraction: Very small broken threshold
+        length: Grain effective length (calibrated mm or pixels)
+        whole_kernel_length: Trusted or sample-derived whole-kernel reference length
+        threshold_fraction: Broken if length < this fraction (default 0.75)
+        small_broken_fraction: Sub-category for small broken fragments (default 0.25)
+        reference_source: 'profile', 'sample_derived', or 'unavailable'
+        reference_status: 'reliable', 'limited', or 'undetermined'
+        measurement_quality: 'good', 'limited', 'poor', 'unreliable'
         
     Returns:
-        Dict with broken status, confidence, and method
+        Structured dict with broken status, ratio, and reference provenance.
     """
-    if whole_kernel_length is None or whole_kernel_length <= 0:
+    if (
+        whole_kernel_length is None
+        or whole_kernel_length <= 0
+        or reference_status == "undetermined"
+        or reference_source == "unavailable"
+    ):
         return {
             "broken_label": "undetermined",
+            "effective_length": round(length, 2),
+            "whole_kernel_length_ref": None,
+            "length_ratio": None,
             "broken_ratio": None,
             "is_small_broken": None,
             "confidence": 0.0,
-            "method": "robust_whole_kernel_estimator",
-            "reason": "Cannot be reliably determined from this sample",
+            "method": reference_source,
+            "reference_source": reference_source,
+            "reference_status": "undetermined",
+            "threshold_fraction": threshold_fraction,
+            "measurement_quality": measurement_quality,
+            "classification_reason": "Insufficient whole-kernel reference (cannot determine without trusted profile or intact population)",
         }
     
     ratio = length / whole_kernel_length
     is_broken = ratio < threshold_fraction
     is_small_broken = ratio < small_broken_fraction
     
+    # Base confidence based on margin from 0.75 decision boundary
+    margin = abs(ratio - threshold_fraction)
+    confidence = min(1.0, margin / 0.20 + 0.60)
+    if measurement_quality in ("poor", "unreliable"):
+        confidence = min(confidence, 0.45)
+    elif measurement_quality == "limited":
+        confidence = min(confidence, 0.75)
+    
+    label = "broken" if is_broken else "whole"
+    
     return {
-        "broken_label": "broken" if is_broken else "whole",
-        "broken_ratio": round(ratio, 4),
-        "is_small_broken": is_small_broken,
-        "confidence": min(1.0, abs(ratio - threshold_fraction) / 0.2 + 0.5),
-        "method": "robust_whole_kernel_estimator",
-        "threshold_fraction": threshold_fraction,
+        "broken_label": label,
+        "effective_length": round(length, 2),
         "whole_kernel_length_ref": round(whole_kernel_length, 2),
+        "length_ratio": round(ratio, 4),
+        "broken_ratio": round(ratio, 4),  # backwards compatibility
+        "is_small_broken": is_small_broken,
+        "confidence": round(confidence, 4),
+        "method": reference_source,
+        "reference_source": reference_source,
+        "reference_status": reference_status,
+        "threshold_fraction": threshold_fraction,
+        "measurement_quality": measurement_quality,
+        "classification_reason": (
+            f"Length ratio {ratio:.3f} {'<' if is_broken else '>='} threshold {threshold_fraction:.2f} "
+            f"against {reference_source} reference ({whole_kernel_length:.1f})"
+        ),
     }

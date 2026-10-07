@@ -58,6 +58,7 @@ class JobManager:
         filename: str,
         manual_scale: Optional[Dict] = None,
         grade: str = "grade_a",
+        profile: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Run analysis synchronously and store result."""
         job_id = self.create_job()
@@ -73,6 +74,7 @@ class JobManager:
                 filename=filename,
                 manual_scale=manual_scale,
                 grade=grade,
+                profile=profile,
             )
             job["status"] = "completed"
             job["progress_stage"] = "Completed"

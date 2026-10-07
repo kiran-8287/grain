@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Crosshair } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Crosshair, Eye, EyeOff, Circle, Square } from 'lucide-react';
 import { GrainInstance, ForeignObject } from '../types';
 
 interface AnnotatedViewerProps {
@@ -9,14 +9,34 @@ interface AnnotatedViewerProps {
   selectedGrainId: number | null;
   onSelectGrain: (id: number) => void;
   foreignMatter?: ForeignObject[];
+  showMasks?: boolean;
+  showBoxes?: boolean;
+  showIds?: boolean;
+  onToggleMasks?: (v: boolean) => void;
+  onToggleBoxes?: (v: boolean) => void;
+  onToggleIds?: (v: boolean) => void;
 }
 
-function hueForId(id: number): number {
-  return (id * 47) % 360;
+function colorForGrain(grain: GrainInstance, alpha = 0.35): string {
+  const status = grain.defects?.broken?.broken_label;
+  if (status === 'whole') {
+    return `hsla(142, 72%, 45%, ${alpha})`;
+  }
+  if (status === 'broken') {
+    return `hsla(0, 84%, 55%, ${alpha})`;
+  }
+  return `hsla(215, 25%, 60%, ${alpha})`;
 }
 
-function colorForGrain(id: number, alpha = 0.35): string {
-  return `hsla(${hueForId(id)}, 65%, 50%, ${alpha})`;
+function strokeColorForGrain(grain: GrainInstance): string {
+  const status = grain.defects?.broken?.broken_label;
+  if (status === 'whole') {
+    return 'hsl(142, 76%, 36%)';
+  }
+  if (status === 'broken') {
+    return 'hsl(0, 84%, 50%)';
+  }
+  return 'hsl(215, 25%, 50%)';
 }
 
 export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
@@ -26,6 +46,12 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
   selectedGrainId,
   onSelectGrain,
   foreignMatter = [],
+  showMasks = true,
+  showBoxes = true,
+  showIds = true,
+  onToggleMasks,
+  onToggleBoxes,
+  onToggleIds,
 }) => {
   const [zoom, setZoom] = useState(1);
   const [hoveredGrainId, setHoveredGrainId] = useState<number | null>(null);
@@ -61,50 +87,56 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
     const sx = displayWidth / img.naturalWidth;
     const sy = displayHeight / img.naturalHeight;
 
-    for (const grain of grains) {
-      const polygon = grain.mask_polygon;
-      if (!polygon || polygon.length < 3) continue;
-      const isSelected = grain.id === selectedGrainId;
-      const isHovered = grain.id === hoveredGrainId;
-      const alpha = isSelected ? 0.55 : isHovered ? 0.48 : 0.35;
+    if (showMasks) {
+      for (const grain of grains) {
+        const polygon = grain.mask_polygon;
+        if (!polygon || polygon.length < 3) continue;
+        const isSelected = grain.id === selectedGrainId;
+        const isHovered = grain.id === hoveredGrainId;
+        const alpha = isSelected ? 0.60 : isHovered ? 0.50 : 0.38;
 
-      ctx.beginPath();
-      polygon.forEach(([px, py], i) => {
-        const x = px * sx;
-        const y = py * sy;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.closePath();
-      ctx.fillStyle = colorForGrain(grain.id, alpha);
-      ctx.fill();
+        ctx.beginPath();
+        polygon.forEach(([px, py], i) => {
+          const x = px * sx;
+          const y = py * sy;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = colorForGrain(grain, alpha);
+        ctx.fill();
+      }
     }
 
-    for (const grain of grains) {
-      const [x, y, w, h] = grain.bbox;
-      const isSelected = grain.id === selectedGrainId;
-      const isHovered = grain.id === hoveredGrainId;
-      ctx.strokeStyle = colorForGrain(grain.id, 1);
-      ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
-      ctx.strokeRect(x * sx, y * sy, w * sx, h * sy);
+    if (showBoxes) {
+      for (const grain of grains) {
+        const [x, y, w, h] = grain.bbox;
+        const isSelected = grain.id === selectedGrainId;
+        const isHovered = grain.id === hoveredGrainId;
+        ctx.strokeStyle = strokeColorForGrain(grain);
+        ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
+        ctx.strokeRect(x * sx, y * sy, w * sx, h * sy);
+      }
     }
 
-    for (const grain of grains) {
-      if (grain.id !== selectedGrainId) continue;
-      const polygon = grain.mask_polygon;
-      if (!polygon || polygon.length < 3) continue;
+    if (showMasks) {
+      for (const grain of grains) {
+        if (grain.id !== selectedGrainId) continue;
+        const polygon = grain.mask_polygon;
+        if (!polygon || polygon.length < 3) continue;
 
-      ctx.beginPath();
-      polygon.forEach(([px, py], i) => {
-        const x = px * sx;
-        const y = py * sy;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.closePath();
-      ctx.strokeStyle = `hsl(${hueForId(grain.id)}, 80%, 55%)`;
-      ctx.lineWidth = 4;
-      ctx.stroke();
+        ctx.beginPath();
+        polygon.forEach(([px, py], i) => {
+          const x = px * sx;
+          const y = py * sy;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = strokeColorForGrain(grain);
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
     }
 
     if (foreignMatter.length) {
@@ -133,54 +165,56 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
       }
     }
 
-    for (const grain of grains) {
-      const [cx, cy] = grain.centroid;
-      const px = cx * sx;
-      const py = cy * sy;
-      const label = `#${grain.id}`;
-      const confText = `${Math.round(grain.confidence * 100)}%`;
+    if (showIds) {
+      for (const grain of grains) {
+        const [cx, cy] = grain.centroid;
+        const px = cx * sx;
+        const py = cy * sy;
+        const label = `#${grain.id}`;
+        const confText = `${Math.round(grain.confidence * 100)}%`;
 
-      ctx.font = 'bold 11px Inter, sans-serif';
-      const idMetrics = ctx.measureText(label);
-      const confMetrics = ctx.measureText(confText);
-      const idW = idMetrics.width + 8;
-      const confW = confMetrics.width + 8;
-      const totalW = idW + confW + 2;
-      const badgeH = 18;
-      const badgeX = px - totalW / 2;
-      const badgeY = py - badgeH / 2;
+        ctx.font = 'bold 11px Inter, sans-serif';
+        const idMetrics = ctx.measureText(label);
+        const confMetrics = ctx.measureText(confText);
+        const idW = idMetrics.width + 8;
+        const confW = confMetrics.width + 8;
+        const totalW = idW + confW + 2;
+        const badgeH = 18;
+        const badgeX = px - totalW / 2;
+        const badgeY = py - badgeH / 2;
 
-      ctx.fillStyle = '#FFFFFF';
-      ctx.strokeStyle = colorForGrain(grain.id, 0.9);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      const r = Math.min(5, totalW / 2, badgeH / 2);
-      ctx.moveTo(badgeX + r, badgeY);
-      ctx.lineTo(badgeX + totalW - r, badgeY);
-      ctx.quadraticCurveTo(badgeX + totalW, badgeY, badgeX + totalW, badgeY + r);
-      ctx.lineTo(badgeX + totalW, badgeY + badgeH - r);
-      ctx.quadraticCurveTo(badgeX + totalW, badgeY + badgeH, badgeX + totalW - r, badgeY + badgeH);
-      ctx.lineTo(badgeX + r, badgeY + badgeH);
-      ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r);
-      ctx.lineTo(badgeX, badgeY + r);
-      ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = colorForGrain(grain, 0.9);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        const r = Math.min(5, totalW / 2, badgeH / 2);
+        ctx.moveTo(badgeX + r, badgeY);
+        ctx.lineTo(badgeX + totalW - r, badgeY);
+        ctx.quadraticCurveTo(badgeX + totalW, badgeY, badgeX + totalW, badgeY + r);
+        ctx.lineTo(badgeX + totalW, badgeY + badgeH - r);
+        ctx.quadraticCurveTo(badgeX + totalW, badgeY + badgeH, badgeX + totalW - r, badgeY + badgeH);
+        ctx.lineTo(badgeX + r, badgeY + badgeH);
+        ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r);
+        ctx.lineTo(badgeX, badgeY + r);
+        ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
 
-      let cursorX = badgeX + 4;
-      ctx.fillStyle = '#1F2937';
-      ctx.fillText(label, cursorX, badgeY + 13);
-      cursorX += idW;
+        let cursorX = badgeX + 4;
+        ctx.fillStyle = '#1F2937';
+        ctx.fillText(label, cursorX, badgeY + 13);
+        cursorX += idW;
 
-      ctx.fillStyle = colorForGrain(grain.id, 1);
-      ctx.fillRect(cursorX, badgeY + 3, 1, badgeH - 6);
-      cursorX += 2;
+        ctx.fillStyle = strokeColorForGrain(grain);
+        ctx.fillRect(cursorX, badgeY + 3, 1, badgeH - 6);
+        cursorX += 2;
 
-      ctx.fillStyle = colorForGrain(grain.id, 1);
-      ctx.fillText(confText, cursorX, badgeY + 13);
+        ctx.fillStyle = strokeColorForGrain(grain);
+        ctx.fillText(confText, cursorX, badgeY + 13);
+      }
     }
-  }, [grains, selectedGrainId, hoveredGrainId, foreignMatter]);
+  }, [grains, selectedGrainId, hoveredGrainId, foreignMatter, showMasks, showBoxes, showIds]);
 
   useEffect(() => {
     if (!originalImageUrl) return;
@@ -272,6 +306,23 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
 
   const hoveredGrain = grains.find((g) => g.id === hoveredGrainId) || null;
 
+  const toggleButton = (active: boolean, onToggle: ((v: boolean) => void) | undefined, label: string, IconOn: React.FC<{ className?: string }>, IconOff: React.FC<{ className?: string }>) => {
+    if (!onToggle) return null;
+    return (
+      <button
+        onClick={() => onToggle(!active)}
+        className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all border ${
+          active ? 'bg-brand text-white border-brand shadow-sm' : 'bg-surface text-text-secondary border-border hover:bg-surface-subtle hover:text-text-primary'
+        }`}
+        title={active ? `Hide ${label}` : `Show ${label}`}
+      >
+        {active ? <IconOn className="w-3 h-3" /> : <IconOff className="w-3 h-3" />}
+        <span className="hidden sm:inline">{label}</span>
+        <span className={`text-[9px] font-bold ${active ? 'text-white/80' : 'text-text-muted'}`}>{active ? 'ON' : 'OFF'}</span>
+      </button>
+    );
+  };
+
   return (
     <div className="bg-surface border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
       {/* Controls Bar */}
@@ -281,6 +332,14 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
           <span className="text-[10px] bg-surface border border-border text-text-muted px-2 py-0.5 rounded-full">
             {grains.length} Grains Mapped
           </span>
+          <div className="flex items-center gap-1.5 ml-1">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Whole (≥75%)
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Broken (&lt;75%)
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -300,6 +359,10 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
               ))}
             </select>
           </div>
+
+          {toggleButton(showIds, onToggleIds, 'IDs', Eye, EyeOff)}
+          {toggleButton(showMasks, onToggleMasks, 'Masks', Circle, Circle)}
+          {toggleButton(showBoxes, onToggleBoxes, 'Boxes', Square, Square)}
 
           {/* Zoom controls */}
           <div className="flex items-center bg-surface rounded-lg p-0.5 border border-border">
@@ -358,13 +421,37 @@ export const AnnotatedViewer: React.FC<AnnotatedViewerProps> = ({
               className="pointer-events-none absolute z-20 bg-surface border border-border rounded-lg shadow-xl px-3 py-2 text-xs"
               style={{ left: tooltipPos.x, top: tooltipPos.y }}
             >
-              <p className="font-semibold text-text-primary mb-0.5">Grain #{hoveredGrain.id}</p>
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <span className="font-semibold text-text-primary">Grain #{hoveredGrain.id}</span>
+                <span
+                  className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                    hoveredGrain.defects?.broken?.broken_label === 'whole'
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : hoveredGrain.defects?.broken?.broken_label === 'broken'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300'
+                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  {hoveredGrain.defects?.broken?.broken_label || 'undetermined'}
+                </span>
+              </div>
               <p className="text-text-muted">
-                Confidence: <span className="font-medium text-text-primary">{(hoveredGrain.confidence * 100).toFixed(1)}%</span>
+                Length:{' '}
+                <span className="font-medium text-text-primary">
+                  {hoveredGrain.defects?.broken?.effective_length ??
+                    hoveredGrain.geometry.effective_length_pixels ??
+                    hoveredGrain.geometry.length_pixels}{' '}
+                  px
+                </span>
               </p>
-              <p className="text-text-muted">
-                Area: <span className="font-medium text-text-primary">{hoveredGrain.geometry.area_pixels.toLocaleString()} px²</span>
-              </p>
+              {hoveredGrain.defects?.broken?.length_ratio != null && (
+                <p className="text-text-muted">
+                  Ratio:{' '}
+                  <span className="font-medium text-text-primary">
+                    {(hoveredGrain.defects.broken.length_ratio * 100).toFixed(1)}%
+                  </span>
+                </p>
+              )}
             </div>
           )}
         </div>

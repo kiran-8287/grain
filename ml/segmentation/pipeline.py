@@ -57,7 +57,9 @@ from ml.quality.geometry import (
     classify_broken,
     compute_grain_geometry,
     compute_robust_whole_kernel_length,
+    resolve_whole_kernel_reference,
 )
+from ml.quality.profiles import GrainProfile, get_default_grain_profile, load_grain_profile
 from ml.segmentation.inference import analyze_image as phase1_analyze_image
 from ml.segmentation.postprocessing import (
     PostProcessor,
@@ -306,6 +308,7 @@ class RiceQualityPipeline:
         filename: str = "image.jpg",
         manual_scale: Optional[Dict] = None,
         grade: str = "grade_a",
+        profile: Optional[Union[str, Dict[str, Any], GrainProfile]] = None,
     ) -> Dict[str, Any]:
         """
         Execute full analysis pipeline on an image.
@@ -315,6 +318,7 @@ class RiceQualityPipeline:
             filename: Original filename (for extension check / logging)
             manual_scale: Optional {'reference_pixels': N, 'reference_mm': M}
             grade: 'grade_a' or 'common'
+            profile: Optional GrainProfile instance, name string, or dict profile
 
         Returns:
             Dict matching the complete project result schema.
@@ -508,17 +512,53 @@ class RiceQualityPipeline:
             grain_areas.append(geom.area_pixels)
             grain_confidences.append(grain.confidence)
             effective_length = (
-                geom.length_mm if geom.length_mm is not None else geom.length_pixels
+                geom.effective_length_mm
+                if geom.effective_length_mm is not None
+                else (geom.length_mm if geom.length_mm is not None else geom.effective_length_pixels)
             )
             lengths.append(effective_length)
 
-        # 6. Broken Grain Reference Calculation
-        whole_kernel_len, whole_len_status = compute_robust_whole_kernel_length(
-            lengths
+        # 6. Broken Grain Reference Calculation (3-tier hierarchy: profile -> sample_derived -> undetermined)
+        #
+        # NOTE: We do NOT automatically load get_default_grain_profile() here.
+        # Pixel-unit profiles are zoom-level dependent: the same physical rice kernel
+        # measures ~148 px in a 50-grain image but ~374 px in a 1-grain image.
+        # Silently injecting a pixel profile from a different imaging setup causes
+        # incorrect broken classifications on any image not shot at that exact distance.
+        #
+        # The caller must explicitly supply a profile (via the `profile` parameter)
+        # if they have a calibrated reference for their imaging setup.
+        # Without a profile, the system falls back to sample-derived reference (Tier 2)
+        # or marks the classification as undetermined (Tier 3).
+        measurement_unit = "mm" if calibration_res.calibrated else "pixels"
+        active_profile = profile  # None is valid — triggers Tier 2 / Tier 3
+
+        (
+            whole_kernel_len,
+            whole_len_source,
+            whole_len_status,
+            whole_len_meta,
+        ) = resolve_whole_kernel_reference(
+            lengths=lengths,
+            profile=active_profile,
+            geometries=geometries,
+            measurement_unit=measurement_unit,
         )
+
+        broken_threshold_fraction = float(get_threshold("broken", "whole_kernel_fraction", 0.75))
+        small_broken_fraction = float(get_threshold("broken", "small_broken_max_fraction", 0.25))
+
         if whole_kernel_len is None:
             warnings.append(
-                "Whole-kernel length reference could not be reliably estimated (sample size <= 2)."
+                f"Whole-kernel length reference could not be reliably estimated: {whole_len_meta.get('reason', 'insufficient reference evidence')}."
+            )
+        elif whole_len_source == "profile":
+            warnings.append(
+                f"Whole-kernel reference loaded from profile '{whole_len_meta.get('profile_name', 'configured')}': {whole_kernel_len:.1f} {measurement_unit}."
+            )
+        else:
+            warnings.append(
+                f"Whole-kernel reference derived from candidate intact grains in sample: {whole_kernel_len:.1f} {measurement_unit} ({whole_len_meta.get('candidate_count', 0)} candidate grains)."
             )
 
         # Build LAB reference for discolouration
@@ -527,7 +567,7 @@ class RiceQualityPipeline:
             g_lab = extract_grain_lab_pixels(image_rgb, grain.mask)
             if g_lab is not None and len(g_lab) > 0:
                 all_labs.append(g_lab)
-        ref_lab = compute_reference_lab(all_labs)
+            ref_lab = compute_reference_lab(all_labs)
 
         # Population stats for immature/shrunken
         pop_breadths = [
@@ -594,11 +634,18 @@ class RiceQualityPipeline:
         for i, (grain, geom) in enumerate(zip(grains, geometries)):
             # Broken
             g_len = (
-                geom.length_mm if geom.length_mm is not None else geom.length_pixels
+                geom.effective_length_mm
+                if geom.effective_length_mm is not None
+                else (geom.length_mm if geom.length_mm is not None else geom.effective_length_pixels)
             )
             broken_res = classify_broken(
                 length=g_len,
                 whole_kernel_length=whole_kernel_len,
+                threshold_fraction=broken_threshold_fraction,
+                small_broken_fraction=small_broken_fraction,
+                reference_source=whole_len_source,
+                reference_status=whole_len_status,
+                measurement_quality=geom.measurement_quality,
             )
             broken_labels.append(broken_res["broken_label"])
             if broken_res["broken_label"] == "broken":
@@ -796,8 +843,15 @@ class RiceQualityPipeline:
             else 0
         )
 
+        whole_count = sum(1 for label in broken_labels if label == "whole")
+        undetermined_count = sum(1 for label in broken_labels if label == "undetermined")
+
         sample_summary = {
             "total_rice_grains": n_grains,
+            "total_count": n_grains,
+            "whole_count": whole_count,
+            "broken_count": broken_count,
+            "undetermined_count": undetermined_count,
             "uncertain_grains": seg_uncertain,
             "rejected_grains": seg_rejected,
             "foreign_matter_count": fm_result.foreign_object_count,
@@ -816,9 +870,21 @@ class RiceQualityPipeline:
             "admixture_status": admixture_res.get("admixture_status", "unsupported"),
             "geometry_outlier_count": admixture_res.get("geometry_outlier_count"),
             "geometry_outlier_fraction": admixture_res.get("geometry_outlier_fraction"),
-            "broken_count": broken_count,
-            "broken_percent": to_pct(broken_count, broken_analyzed_count) if broken_analyzed_count else None,
+            "broken_percent": (
+                round((broken_count / n_grains) * 100.0, 2)
+                if (n_grains > 0 and broken_analyzed_count > 0)
+                else None
+            ),
+            "whole_percent": (
+                round((whole_count / n_grains) * 100.0, 2)
+                if (n_grains > 0 and broken_analyzed_count > 0)
+                else None
+            ),
             "broken_analyzed_count": broken_analyzed_count,
+            "whole_reference_length": round(whole_kernel_len, 2) if whole_kernel_len is not None else None,
+            "reference_source": whole_len_source,
+            "reference_status": whole_len_status,
+            "reference_profile_name": whole_len_meta.get("profile_name"),
             "damaged_count": damaged_count,
             "damaged_percent": to_pct(damaged_count, damaged_analyzed_count) if damaged_analyzed_count else None,
             "damaged_analyzed_count": damaged_analyzed_count,
@@ -901,10 +967,11 @@ class RiceQualityPipeline:
         #     expects.  Any grain with no mask_polygon (classical CV fallback)
         #     falls back to bbox-fill inside the renderer.
         phase1_grains_for_render: List[Dict[str, Any]] = []
-        for g in grains:
+        for i, g in enumerate(grains):
             mask_polygon = None
             if isinstance(g.mask_polygon, (list, tuple)) and len(g.mask_polygon) >= 3:
                 mask_polygon = [[float(x), float(y)] for [x, y] in g.mask_polygon]
+            b_lbl = broken_labels[i] if i < len(broken_labels) else "undetermined"
             phase1_grains_for_render.append(
                 {
                     "id": int(g.grain_id),
@@ -913,6 +980,7 @@ class RiceQualityPipeline:
                     "confidence_label": g.confidence_label,
                     "mask_polygon": mask_polygon,
                     "centroid": [float(g.centroid[0]), float(g.centroid[1])],
+                    "broken_label": b_lbl,
                 }
             )
         fm_for_render: List[Dict[str, Any]] = []

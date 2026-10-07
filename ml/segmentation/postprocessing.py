@@ -139,16 +139,22 @@ def render_phase1_overlay(
         bx, by, bw, bh = [int(v) for v in bbox]
         gid = int(g.get("id", idx + 1))
 
-        # Decide per-grain color
-        color = confidence_to_color(
-            confidence=g.get("confidence"),
-            label=g.get("confidence_label"),
-        )
-        # If color ended up UNKNOWN because neither label nor confidence was
-        # provided, fall back to the per-grain cycle palette so adjacent
-        # grains remain visually separable (useful for classical CV outputs).
-        if color == CONFIDENCE_COLORS_RGB["UNKNOWN"] and "confidence" not in g:
-            color = GRAIN_CYCLE_PALETTE_RGB[idx % len(GRAIN_CYCLE_PALETTE_RGB)]
+        # Decide per-grain color: prioritize whole vs broken status if available
+        b_label = g.get("broken_label")
+        if b_label == "broken":
+            color = (239, 68, 68)   # Vivid red for broken grains
+        elif b_label == "whole":
+            color = (34, 197, 94)   # Vivid green for whole grains
+        else:
+            color = confidence_to_color(
+                confidence=g.get("confidence"),
+                label=g.get("confidence_label"),
+            )
+            # If color ended up UNKNOWN because neither label nor confidence was
+            # provided, fall back to the per-grain cycle palette so adjacent
+            # grains remain visually separable (useful for classical CV outputs).
+            if color == CONFIDENCE_COLORS_RGB["UNKNOWN"] and "confidence" not in g:
+                color = GRAIN_CYCLE_PALETTE_RGB[idx % len(GRAIN_CYCLE_PALETTE_RGB)]
 
         polygon = g.get("mask_polygon") or []
         mask_filled = None
