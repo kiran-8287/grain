@@ -24,7 +24,7 @@ import base64
 import io
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -88,6 +88,7 @@ from ml.quality.texture import (
     extract_chalky_features,
     heuristic_chalky_classification,
 )
+from backend.app.services.run_logger import structured_logger
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +310,7 @@ class RiceQualityPipeline:
         manual_scale: Optional[Dict] = None,
         grade: str = "grade_a",
         profile: Optional[Union[str, Dict[str, Any], GrainProfile]] = None,
+        job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute full analysis pipeline on an image.
@@ -319,17 +321,45 @@ class RiceQualityPipeline:
             manual_scale: Optional {'reference_pixels': N, 'reference_mm': M}
             grade: 'grade_a' or 'common'
             profile: Optional GrainProfile instance, name string, or dict profile
+            job_id: Optional unique job identifier for structured logging correlation
 
         Returns:
             Dict matching the complete project result schema.
         """
+        t0 = time.monotonic()
         start_time = time.time()
         warnings: List[str] = []
+
+        file_size = None
+        if isinstance(image_source, bytes):
+            file_size = len(image_source)
+        elif isinstance(image_source, str):
+            try:
+                file_size = Path(image_source).stat().st_size
+            except OSError:
+                pass
+
+        structured_logger.info(
+            "analysis_started",
+            job_id=job_id,
+            filename=filename,
+            file_size_bytes=file_size,
+            input_source="upload" if isinstance(image_source, bytes) else "other",
+        )
 
         # 1. Load and validate image
         try:
             image_rgb, image_info = load_image(image_source, filename=filename)
         except ImageValidationError as e:
+            structured_logger.error(
+                "analysis_failed",
+                job_id=job_id,
+                status="failed",
+                failed_stage="image_decode",
+                error_type="ValidationError",
+                error_message=str(e),
+                duration_ms=int((time.monotonic() - t0) * 1000),
+            )
             return {
                 "success": False,
                 "error": str(e),
@@ -338,6 +368,15 @@ class RiceQualityPipeline:
             }
         except Exception as e:
             logger.error(f"Failed to load image: {e}")
+            structured_logger.error(
+                "analysis_failed",
+                job_id=job_id,
+                status="failed",
+                failed_stage="image_decode",
+                error_type="DecodeError",
+                error_message=f"Image decoding error: {str(e)}",
+                duration_ms=int((time.monotonic() - t0) * 1000),
+            )
             return {
                 "success": False,
                 "error": f"Image decoding error: {str(e)}",
@@ -348,13 +387,34 @@ class RiceQualityPipeline:
         h, w = image_rgb.shape[:2]
         megapixels = (h * w) / 1_000_000
 
+        structured_logger.info(
+            "image_decoded",
+            job_id=job_id,
+            width=w,
+            height=h,
+            format=getattr(image_info, "format_", getattr(image_info, "format", None)),
+            file_size_bytes=file_size,
+            source=getattr(image_info, "source", None),
+        )
+
         # 2. Rice-presence gate (Case 1): "objects detected" != "rice detected".
         #    Only detections whose class is the model configuration's rice class
         #    (models/segmentation/class_mapping.json -> class_id 1 "rice_grain")
         #    with confidence >= rice_gate.rice_confidence_threshold count as rice.
         #    Foreign-matter detections are never treated as rice.
+        structured_logger.info("rice_gate_started", job_id=job_id)
         rice_gate = detect_rice_presence(image_rgb)
         gate_status = rice_gate.get("status")
+        gate_ms = int((time.monotonic() - t0) * 1000)
+        structured_logger.info(
+            "rice_gate_completed",
+            job_id=job_id,
+            duration_ms=gate_ms,
+            status=gate_status,
+            has_rice=rice_gate.get("has_rice", False),
+            rice_detections=rice_gate.get("rice_detections", 0),
+            total_detections=rice_gate.get("total_detections", 0),
+        )
         if gate_status in (
             STATUS_NOT_RICE,
             STATUS_NO_ANALYSABLE_RICE,
@@ -364,12 +424,20 @@ class RiceQualityPipeline:
                 "Rice gate FAILED — rice analysis not executed. %s",
                 rice_gate.get("debug", ""),
             )
+            structured_logger.info(
+                "analysis_completed",
+                job_id=job_id,
+                status="success",
+                rice_detected=False,
+                total_processing_ms=int((time.monotonic() - t0) * 1000),
+            )
             return self._build_no_rice_response(
                 image_info=image_info,
                 image_rgb=image_rgb,
                 rice_gate=rice_gate,
                 warnings=warnings,
                 start_time=start_time,
+                job_id=job_id,
             )
 
         logger.info("Rice gate PASSED. %s", rice_gate.get("debug", ""))
@@ -401,6 +469,7 @@ class RiceQualityPipeline:
         seg_uncertain = 0
         seg_rejected = 0
 
+        structured_logger.info("segmentation_started", job_id=job_id)
         try:
             phase1_result = phase1_analyze_image(image_rgb)
             if not isinstance(phase1_result, dict):
@@ -469,6 +538,17 @@ class RiceQualityPipeline:
                 "Only rice-gate detections remain in the rice-grain pipeline."
             )
         n_grains = len(grains)
+        seg_method = phase1_meta.get("segmentation_method_used") or phase1_meta.get("source") or "unknown"
+        structured_logger.info(
+            "segmentation_completed",
+            job_id=job_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+            method=seg_method,
+            grain_count=n_grains,
+            detected=seg_detected,
+            uncertain=seg_uncertain,
+            rejected=seg_rejected,
+        )
 
         if n_grains == 0:
             # Rice-class detections existed, but no analysable grain instance was
@@ -481,6 +561,14 @@ class RiceQualityPipeline:
             stopped_gate["status"] = STATUS_NO_ANALYSABLE_RICE
             stopped_gate["analysis_stopped"] = True
             stopped_gate["message"] = MESSAGE_NO_ANALYSABLE_RICE
+            structured_logger.info(
+                "analysis_completed",
+                job_id=job_id,
+                status="success",
+                rice_detected=False,
+                grain_count=0,
+                total_processing_ms=int((time.monotonic() - t0) * 1000),
+            )
             return self._build_no_rice_response(
                 image_info=image_info,
                 image_rgb=image_rgb,
@@ -494,9 +582,11 @@ class RiceQualityPipeline:
                     "rejected": seg_rejected,
                 },
                 phase1_meta=phase1_meta,
+                job_id=job_id,
             )
 
         # 5. Per-grain Geometry
+        structured_logger.info("geometry_started", job_id=job_id)
         geometries = []
         grain_areas = []
         grain_confidences = []
@@ -518,6 +608,12 @@ class RiceQualityPipeline:
             )
             lengths.append(effective_length)
 
+        structured_logger.info(
+            "geometry_completed",
+            job_id=job_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+            grain_count=len(geometries),
+        )
         # 6. Broken Grain Reference Calculation (3-tier hierarchy: profile -> sample_derived -> undetermined)
         #
         # NOTE: We do NOT automatically load get_default_grain_profile() here.
@@ -583,6 +679,7 @@ class RiceQualityPipeline:
         }
 
         # 7. Multi-Label Defect Classification per grain
+        structured_logger.info("broken_classification_started", job_id=job_id)
         classified_grains = []
         broken_labels = []
         damaged_count = 0
@@ -846,6 +943,17 @@ class RiceQualityPipeline:
         whole_count = sum(1 for label in broken_labels if label == "whole")
         undetermined_count = sum(1 for label in broken_labels if label == "undetermined")
 
+        structured_logger.info(
+            "broken_classification_completed",
+            job_id=job_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+            grain_count=len(classified_grains),
+            whole_count=whole_count,
+            broken_count=broken_count,
+            undetermined_count=undetermined_count,
+            reference_source=whole_len_source,
+        )
+
         sample_summary = {
             "total_rice_grains": n_grains,
             "total_count": n_grains,
@@ -956,16 +1064,8 @@ class RiceQualityPipeline:
         )
         warnings.extend(standards_res.get("warnings", []))
 
-        # 13. Generate Annotated Image — uses shared Phase 1 renderer so that the
-        #     Full Analysis Dashboard and the Phase 1 demo endpoint produce
-        #     pixel-identical HIGH/MEDIUM/LOW colored polygons, ID pills,
-        #     foreign-matter FM#N red boxes, and a top-right legend badge.
-        #
-        #     Synthesis path: every GrainInstance (populated with
-        #     confidence_label + mask_polygon if Phase 1 cascade ran) is mapped
-        #     back to the Phase1AnalysisResponse dict shape render_phase1_overlay
-        #     expects.  Any grain with no mask_polygon (classical CV fallback)
-        #     falls back to bbox-fill inside the renderer.
+        # 13. Generate Annotated Image
+        structured_logger.info("annotation_started", job_id=job_id)
         phase1_grains_for_render: List[Dict[str, Any]] = []
         for i, g in enumerate(grains):
             mask_polygon = None
@@ -1020,6 +1120,12 @@ class RiceQualityPipeline:
         )
         annotated_b64 = self._encode_rgb_to_jpeg_b64(image_rgb=overlay_rgb)
 
+        structured_logger.info(
+            "annotation_completed",
+            job_id=job_id,
+            duration_ms=int((time.monotonic() - t0) * 1000),
+        )
+
         total_elapsed = time.time() - start_time
 
         # Build clean deduplicated warnings list
@@ -1063,6 +1169,21 @@ class RiceQualityPipeline:
         if phase1_meta:
             result_dict["segmentation_info"] = dict(phase1_meta)
 
+        structured_logger.info(
+            "analysis_completed",
+            job_id=job_id,
+            status="success",
+            rice_detected=True,
+            grain_count=sample_summary.get("total_rice_grains", n_grains),
+            whole_count=whole_count,
+            broken_count=broken_count,
+            undetermined_count=undetermined_count,
+            broken_percent=sample_summary.get("broken_percent"),
+            segmentation_method=phase1_meta.get("segmentation_method_used") or phase1_meta.get("source"),
+            reference_source=sample_summary.get("reference_source"),
+            total_processing_ms=int((time.monotonic() - t0) * 1000),
+        )
+
         return result_dict
 
     def _build_no_rice_response(
@@ -1075,6 +1196,7 @@ class RiceQualityPipeline:
         message: Optional[str] = None,
         sample_overrides: Optional[Dict[str, Any]] = None,
         phase1_meta: Optional[Dict[str, Any]] = None,
+        job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         CASE 1 response: no valid rice-class detection, so the rice-analysis

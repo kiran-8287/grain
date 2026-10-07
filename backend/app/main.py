@@ -5,6 +5,7 @@ FastAPI Main Application for GRAIN QUALITY ANALYZER.
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # Add project root to sys.path so ml and backend can be imported cleanly
@@ -17,15 +18,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.routes import router
+from backend.app.services.run_logger import structured_logger
 
-# Configure logging
+log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
     ],
 )
+
+logs_dir = PROJECT_ROOT / "logs"
+logs_dir.mkdir(parents=True, exist_ok=True)
+file_handler = RotatingFileHandler(
+    logs_dir / "app.log",
+    maxBytes=10 * 1024 * 1024,
+    backupCount=5,
+)
+file_handler.setLevel(log_level)
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+)
+structured_logger.logger.addHandler(logging.StreamHandler(sys.stdout))
+structured_logger.logger.addHandler(file_handler)
+structured_logger.logger.setLevel(log_level)
+
 logger = logging.getLogger("rice_quality_ai")
 
 app = FastAPI(

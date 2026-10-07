@@ -13,7 +13,9 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -151,3 +153,54 @@ def log_run(
     except Exception as e:
         logger.error("Failed to save analysis run: %s", e, exc_info=True)
         return None
+
+
+class StructuredLogger:
+    """Structured JSON logger for pipeline observability."""
+
+    def __init__(self, name: str = "grain_structured"):
+        self._logger = logging.getLogger(name)
+        self._logger.propagate = False
+
+    @property
+    def logger(self):
+        return self._logger
+
+    def _emit(
+        self,
+        level: int,
+        event: str,
+        job_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        now = time.time()
+        ts = time.strftime(
+            "%Y-%m-%dT%H:%M:%S.", time.gmtime(now)
+        ) + f"{int(now * 1000) % 1000:03d}Z"
+        record: Dict[str, Any] = {
+            "timestamp": ts,
+            "level": logging.getLevelName(level),
+            "event": event,
+            "job_id": job_id,
+            "message": kwargs.pop("message", ""),
+        }
+        for k, v in kwargs.items():
+            if v is not None:
+                record[k] = v
+        clean = {k: v for k, v in record.items() if v is not None}
+        self._logger.log(level, json.dumps(clean, default=str))
+
+    def info(self, event: str, job_id: Optional[str] = None, **kwargs: Any) -> None:
+        self._emit(logging.INFO, event, job_id, **kwargs)
+
+    def error(self, event: str, job_id: Optional[str] = None, **kwargs: Any) -> None:
+        self._emit(logging.ERROR, event, job_id, **kwargs)
+
+    def warning(self, event: str, job_id: Optional[str] = None, **kwargs: Any) -> None:
+        self._emit(logging.WARNING, event, job_id, **kwargs)
+
+    def debug(self, event: str, job_id: Optional[str] = None, **kwargs: Any) -> None:
+        self._emit(logging.DEBUG, event, job_id, **kwargs)
+
+
+structured_logger = StructuredLogger()
