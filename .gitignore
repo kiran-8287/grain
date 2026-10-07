@@ -9,6 +9,7 @@ build/
 venv/
 .venv/
 env/
+.pytest_cache/
 
 # Node
 node_modules/
@@ -25,6 +26,8 @@ frontend/build/
 # Environment
 .env
 .env.local
+backend/.env
+*.env
 
 # Project workflow artifacts
 data/
