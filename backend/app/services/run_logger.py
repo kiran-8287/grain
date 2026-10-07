@@ -27,6 +27,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 RUNS_DIR = PROJECT_ROOT / "data" / "runs"
 
 
+def _is_test_run() -> bool:
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 class _NumpyEncoder(json.JSONEncoder):
     """JSON encoder that handles numpy types."""
     def default(self, obj):
@@ -93,6 +97,9 @@ def log_run(
         Path to the created run folder, or None on failure.
     """
     try:
+        if _is_test_run():
+            return None
+
         run_path = _get_next_run_folder()
         logger.info("Saving analysis run to %s", run_path)
 

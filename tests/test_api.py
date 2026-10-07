@@ -104,4 +104,4 @@ def test_export_endpoints(client):
     # Test CSV export
     res_csv = client.get(f"/analysis/{job_id}/export/csv")
     assert res_csv.status_code == 200
-    assert "grain_id,length,breadth" in res_csv.text
+    assert "grain_id,confidence,length,breadth,L_over_B" in res_csv.text

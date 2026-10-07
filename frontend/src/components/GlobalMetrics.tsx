@@ -23,10 +23,24 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
     const unit = summary.measurement_unit || 'px';
 
     if (src === 'profile') {
+      const isPixelUnit = unit === 'px' || unit === 'pixels' || unit.toLowerCase().startsWith('pixel');
       return (
-        <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-          Reference Profile: {refLen ? `${refLen} ${unit}` : 'Configured'} ({summary.reference_profile_name || 'default'})
-        </span>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+            Reference: Profile
+            {summary.reference_profile_name ? ` (${summary.reference_profile_name})` : ''}
+          </span>
+          <span className="text-[10px] text-text-secondary">
+            Whole-kernel reference: {refLen ? `${refLen} ${unit}` : 'Configured'}
+            {' · '}
+            Criterion: < 75% of reference = Broken
+          </span>
+          {isPixelUnit && (
+            <span className="text-[10px] italic text-text-muted">
+              Pixel reference is scale-specific to the calibrated capture setup — not a universal physical measurement.
+            </span>
+          )}
+        </div>
       );
     }
     if (src === 'sample_derived') {

@@ -1,14 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, CheckCircle2, FileUp, Camera, CameraOff, RefreshCw, X } from 'lucide-react';
+import { Upload, Image as ImageIcon, CheckCircle2, FileUp, Camera, CameraOff, RefreshCw, X, SlidersHorizontal } from 'lucide-react';
+
+export interface ReferenceProfileOption {
+  /** Form value sent to the API. Empty string means "no explicit profile". */
+  id: string;
+  label: string;
+  detail: string;
+}
 
 interface UploadSectionProps {
   onAnalyze: (file: File) => void;
   isLoading: boolean;
+  selectedProfile: string | null;
+  onProfileChange: (profileId: string | null) => void;
+  profileOptions: ReferenceProfileOption[];
 }
 
 type CameraState = 'idle' | 'requesting' | 'active' | 'captured' | 'error';
 
-export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading }) => {
+export const UploadSection: React.FC<UploadSectionProps> = ({
+  onAnalyze,
+  isLoading,
+  selectedProfile,
+  onProfileChange,
+  profileOptions,
+}) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -359,6 +375,35 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoadi
             </div>
           </div>
         )}
+
+        {/* Whole/Broken whole-kernel reference selection */}
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <SlidersHorizontal className="w-4 h-4 text-brand shrink-0" />
+            <span className="text-xs font-semibold text-text-primary">Whole/Broken reference</span>
+          </div>
+          <div className="space-y-1.5">
+            {profileOptions.map((opt) => {
+              const active =
+                (selectedProfile === null && opt.id === '') || opt.id === selectedProfile;
+              return (
+                <button
+                  key={opt.id || 'no-profile'}
+                  type="button"
+                  onClick={() => onProfileChange(opt.id === '' ? null : opt.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg border transition ${
+                    active
+                      ? 'border-brand bg-brand-light'
+                      : 'border-border bg-surface hover:bg-surface-subtle'
+                  }`}
+                >
+                  <span className="block text-xs font-semibold text-text-primary">{opt.label}</span>
+                  <span className="block text-[10px] text-text-muted mt-0.5">{opt.detail}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Calibration Info */}
         <div className="text-xs text-text-secondary bg-surface p-2.5 rounded-lg border border-border flex items-start gap-2">

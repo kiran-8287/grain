@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { UploadSection } from './components/UploadSection';
+import type { ReferenceProfileOption } from './components/UploadSection';
 import { ProcessingState } from './components/ProcessingState';
 import { GlobalMetrics } from './components/GlobalMetrics';
 import { AnnotatedViewer } from './components/AnnotatedViewer';
@@ -12,6 +13,32 @@ import { AlertCircle, RefreshCw, XCircle } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+/**
+ * Whole/Broken whole-kernel reference choices.
+ *
+ * '' means "no explicit profile": the pipeline then resolves the reference from
+ * an intact population inside the sample (Tier 2) or reports Whole/Broken as
+ * Undetermined (Tier 3). It never silently substitutes a fixed pixel profile.
+ *
+ * 'default_rice' is the Tier-1 trusted profile recorded in
+ * grain_profiles/default_rice.json (154.1 px whole-kernel reference). It is
+ * scale-specific to the capture setup that produced it.
+ */
+const REFERENCE_PROFILE_OPTIONS: ReferenceProfileOption[] = [
+  {
+    id: '',
+    label: 'No explicit profile (default)',
+    detail:
+      'Reference resolved from an intact population in the sample; if none exists, Whole/Broken is reported as Undetermined.',
+  },
+  {
+    id: 'default_rice',
+    label: 'Explicit pixel profile — default_rice (154.1 px)',
+    detail:
+      'Tier-1 trusted reference for the calibrated capture setup. Pixel-scale specific; use only at the reference camera distance.',
+  },
+];
+
 export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -20,6 +47,7 @@ export const App: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nonRiceMessage, setNonRiceMessage] = useState<string | null>(null);
   const [nonRiceResult, setNonRiceResult] = useState<AnalysisResult | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
 
   const [showGrainIds, setShowGrainIds] = useState<boolean>(() => {
     try {
@@ -78,6 +106,9 @@ export const App: React.FC = () => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('grade', 'grade_a');
+    if (selectedProfile) {
+      formData.append('profile', selectedProfile);
+    }
 
     try {
       const response = await fetch(`${API_BASE}/api/analyze`, {
@@ -217,7 +248,13 @@ export const App: React.FC = () => {
 
             {/* Upload View */}
             {!isLoading && !result && !nonRiceMessage && (
-              <UploadSection onAnalyze={handleAnalyze} isLoading={isLoading} />
+              <UploadSection
+                onAnalyze={handleAnalyze}
+                isLoading={isLoading}
+                selectedProfile={selectedProfile}
+                onProfileChange={setSelectedProfile}
+                profileOptions={REFERENCE_PROFILE_OPTIONS}
+              />
             )}
 
             {/* Results Dashboard */}
