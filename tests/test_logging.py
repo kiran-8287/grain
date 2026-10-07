@@ -173,3 +173,28 @@ def test_duration_fields_are_numeric():
             assert isinstance(record["duration_ms"], int)
         if "total_processing_ms" in record:
             assert isinstance(record["total_processing_ms"], int)
+
+
+def test_no_duplicate_events_for_single_job():
+    with _LogCapture() as cap:
+        job_manager.process_sync(_make_grain_image(), "test_dedup.jpg")
+
+    job_id = cap.events[0]["job_id"]
+    job_events = [e for e in cap.events if e.get("job_id") == job_id]
+    from collections import Counter
+    counts = Counter(e["event"] for e in job_events)
+    for event, count in counts.items():
+        assert count == 1, f"Event {event} appears {count} times"
+
+
+def test_stage_durations_are_individual_not_cumulative():
+    with _LogCapture() as cap:
+        job_manager.process_sync(_make_grain_image(), "test_stage_individual.jpg")
+
+    completed = [e for e in cap.events if e["event"].endswith("_completed") and e["event"] != "analysis_completed"]
+    durations = [e["duration_ms"] for e in completed]
+    total = sum(durations)
+    final = next((e["total_processing_ms"] for e in cap.events if e["event"] == "analysis_completed"), None)
+    assert final is not None
+    assert total <= final
+    assert final < total + 500

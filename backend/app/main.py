@@ -42,9 +42,13 @@ file_handler.setLevel(log_level)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 )
-structured_logger.logger.addHandler(logging.StreamHandler(sys.stdout))
-structured_logger.logger.addHandler(file_handler)
-structured_logger.logger.setLevel(log_level)
+
+structured_logger_handler_key = "_grain_structured_handlers_configured"
+if not getattr(structured_logger.logger, structured_logger_handler_key, False):
+    structured_logger.logger.addHandler(logging.StreamHandler(sys.stdout))
+    structured_logger.logger.addHandler(file_handler)
+    structured_logger.logger.setLevel(log_level)
+    setattr(structured_logger.logger, structured_logger_handler_key, True)
 
 logger = logging.getLogger("rice_quality_ai")
 

@@ -65,55 +65,26 @@ class JobManager:
         job = self.jobs[job_id]
         job["status"] = "processing"
 
-        file_size = len(image_bytes) if isinstance(image_bytes, bytes) else None
-        source = "upload" if file_size is not None else "other"
-
-        structured_logger.info(
-            "analysis_started",
-            job_id=job_id,
-            filename=filename,
-            file_size_bytes=file_size,
-            input_source=source,
-        )
-
         t_start = time.monotonic()
 
         try:
-            # Run pipeline
             job["progress_stage"] = "Analyzing image through pipeline"
             job["progress_percent"] = 50
-            self.pipeline._job_id = job_id
             result = self.pipeline.analyze(
                 image_source=image_bytes,
                 filename=filename,
                 manual_scale=manual_scale,
                 grade=grade,
                 profile=profile,
+                job_id=job_id,
             )
             job["status"] = "completed"
             job["progress_stage"] = "Completed"
             job["progress_percent"] = 100
             job["completed_at"] = time.time()
             job["result"] = result
-            result["job_id"] = job_id
-
-            summary = result.get("summary") or {}
-            seg_info = result.get("segmentation_info") or {}
-
-            structured_logger.info(
-                "analysis_completed",
-                job_id=job_id,
-                status="success",
-                rice_detected=result.get("rice_detected", False),
-                grain_count=summary.get("total_rice_grains", len(result.get("grains", []))),
-                whole_count=summary.get("whole_count"),
-                broken_count=summary.get("broken_count"),
-                undetermined_count=summary.get("undetermined_count"),
-                broken_percent=summary.get("broken_percent"),
-                segmentation_method=seg_info.get("segmentation_method_used") or seg_info.get("source"),
-                reference_source=summary.get("reference_source"),
-                total_processing_ms=int(result.get("processing_time_seconds", 0) * 1000),
-            )
+            if isinstance(result, dict):
+                result["job_id"] = job_id
 
             log_run(
                 input_bytes=image_bytes,
@@ -136,7 +107,7 @@ class JobManager:
                 failed_stage="pipeline",
                 error_type=type(e).__name__,
                 error_message=str(e),
-                duration_ms=int((time.monotonic() - t_start) * 1000),
+                total_processing_ms=int((time.monotonic() - t_start) * 1000),
             )
 
             error_result = {

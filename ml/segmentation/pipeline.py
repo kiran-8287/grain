@@ -403,9 +403,10 @@ class RiceQualityPipeline:
         #    with confidence >= rice_gate.rice_confidence_threshold count as rice.
         #    Foreign-matter detections are never treated as rice.
         structured_logger.info("rice_gate_started", job_id=job_id)
+        _rice_gate_start = time.monotonic()
         rice_gate = detect_rice_presence(image_rgb)
         gate_status = rice_gate.get("status")
-        gate_ms = int((time.monotonic() - t0) * 1000)
+        gate_ms = int((time.monotonic() - _rice_gate_start) * 1000)
         structured_logger.info(
             "rice_gate_completed",
             job_id=job_id,
@@ -424,14 +425,7 @@ class RiceQualityPipeline:
                 "Rice gate FAILED — rice analysis not executed. %s",
                 rice_gate.get("debug", ""),
             )
-            structured_logger.info(
-                "analysis_completed",
-                job_id=job_id,
-                status="success",
-                rice_detected=False,
-                total_processing_ms=int((time.monotonic() - t0) * 1000),
-            )
-            return self._build_no_rice_response(
+            no_rice_response = self._build_no_rice_response(
                 image_info=image_info,
                 image_rgb=image_rgb,
                 rice_gate=rice_gate,
@@ -439,6 +433,14 @@ class RiceQualityPipeline:
                 start_time=start_time,
                 job_id=job_id,
             )
+            structured_logger.info(
+                "analysis_completed",
+                job_id=job_id,
+                status="success",
+                rice_detected=False,
+                total_processing_ms=int((time.monotonic() - t0) * 1000),
+            )
+            return no_rice_response
 
         logger.info("Rice gate PASSED. %s", rice_gate.get("debug", ""))
         warnings.extend(rice_gate.get("warnings", []))
@@ -470,6 +472,7 @@ class RiceQualityPipeline:
         seg_rejected = 0
 
         structured_logger.info("segmentation_started", job_id=job_id)
+        _seg_start = time.monotonic()
         try:
             phase1_result = phase1_analyze_image(image_rgb)
             if not isinstance(phase1_result, dict):
@@ -539,10 +542,11 @@ class RiceQualityPipeline:
             )
         n_grains = len(grains)
         seg_method = phase1_meta.get("segmentation_method_used") or phase1_meta.get("source") or "unknown"
+        seg_ms = int((time.monotonic() - _seg_start) * 1000)
         structured_logger.info(
             "segmentation_completed",
             job_id=job_id,
-            duration_ms=int((time.monotonic() - t0) * 1000),
+            duration_ms=seg_ms,
             method=seg_method,
             grain_count=n_grains,
             detected=seg_detected,
@@ -561,15 +565,7 @@ class RiceQualityPipeline:
             stopped_gate["status"] = STATUS_NO_ANALYSABLE_RICE
             stopped_gate["analysis_stopped"] = True
             stopped_gate["message"] = MESSAGE_NO_ANALYSABLE_RICE
-            structured_logger.info(
-                "analysis_completed",
-                job_id=job_id,
-                status="success",
-                rice_detected=False,
-                grain_count=0,
-                total_processing_ms=int((time.monotonic() - t0) * 1000),
-            )
-            return self._build_no_rice_response(
+            zero_grain_response = self._build_no_rice_response(
                 image_info=image_info,
                 image_rgb=image_rgb,
                 rice_gate=stopped_gate,
@@ -584,9 +580,19 @@ class RiceQualityPipeline:
                 phase1_meta=phase1_meta,
                 job_id=job_id,
             )
+            structured_logger.info(
+                "analysis_completed",
+                job_id=job_id,
+                status="success",
+                rice_detected=False,
+                grain_count=0,
+                total_processing_ms=int((time.monotonic() - t0) * 1000),
+            )
+            return zero_grain_response
 
         # 5. Per-grain Geometry
         structured_logger.info("geometry_started", job_id=job_id)
+        _geom_start = time.monotonic()
         geometries = []
         grain_areas = []
         grain_confidences = []
@@ -608,10 +614,11 @@ class RiceQualityPipeline:
             )
             lengths.append(effective_length)
 
+        geom_ms = int((time.monotonic() - _geom_start) * 1000)
         structured_logger.info(
             "geometry_completed",
             job_id=job_id,
-            duration_ms=int((time.monotonic() - t0) * 1000),
+            duration_ms=geom_ms,
             grain_count=len(geometries),
         )
         # 6. Broken Grain Reference Calculation (3-tier hierarchy: profile -> sample_derived -> undetermined)
@@ -680,6 +687,7 @@ class RiceQualityPipeline:
 
         # 7. Multi-Label Defect Classification per grain
         structured_logger.info("broken_classification_started", job_id=job_id)
+        _bc_start = time.monotonic()
         classified_grains = []
         broken_labels = []
         damaged_count = 0
@@ -943,10 +951,11 @@ class RiceQualityPipeline:
         whole_count = sum(1 for label in broken_labels if label == "whole")
         undetermined_count = sum(1 for label in broken_labels if label == "undetermined")
 
+        bc_ms = int((time.monotonic() - _bc_start) * 1000)
         structured_logger.info(
             "broken_classification_completed",
             job_id=job_id,
-            duration_ms=int((time.monotonic() - t0) * 1000),
+            duration_ms=bc_ms,
             grain_count=len(classified_grains),
             whole_count=whole_count,
             broken_count=broken_count,
@@ -1066,6 +1075,7 @@ class RiceQualityPipeline:
 
         # 13. Generate Annotated Image
         structured_logger.info("annotation_started", job_id=job_id)
+        _ann_start = time.monotonic()
         phase1_grains_for_render: List[Dict[str, Any]] = []
         for i, g in enumerate(grains):
             mask_polygon = None
@@ -1120,10 +1130,11 @@ class RiceQualityPipeline:
         )
         annotated_b64 = self._encode_rgb_to_jpeg_b64(image_rgb=overlay_rgb)
 
+        ann_ms = int((time.monotonic() - _ann_start) * 1000)
         structured_logger.info(
             "annotation_completed",
             job_id=job_id,
-            duration_ms=int((time.monotonic() - t0) * 1000),
+            duration_ms=ann_ms,
         )
 
         total_elapsed = time.time() - start_time

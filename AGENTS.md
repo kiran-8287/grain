@@ -1,4 +1,9 @@
 # Project Working Instructions
+Before making significant changes:
+1. Read PROJECT_CONTEXT.md
+2. Inspect the current code
+3. Treat current code/runtime as authoritative
+4. Do not expand scope without explicit instruction
 
 - Preserve the existing rice/non-rice gate and segmentation behavior unless a regression test proves a change is necessary.
 - Never present synthetic/demo metrics as real-data validation. Mark unsupported predictions `Experimental`, `Proxy`, or `Undetermined` with the reason.
