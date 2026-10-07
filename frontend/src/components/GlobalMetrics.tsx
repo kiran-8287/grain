@@ -32,8 +32,8 @@ export const GlobalMetrics: React.FC<GlobalMetricsProps> = ({ summary, warnings 
           </span>
           <span className="text-[10px] text-text-secondary">
             Whole-kernel reference: {refLen ? `${refLen} ${unit}` : 'Configured'}
-            {' · '}
-            Criterion: < 75% of reference = Broken
+            {' '}
+            Criterion: &lt; 75% of reference = Broken
           </span>
           {isPixelUnit && (
             <span className="text-[10px] italic text-text-muted">
